@@ -538,3 +538,25 @@ Keep it to four steps so a fresh clone runs without tribal knowledge:
 4. `npm run dev`.
 
 The seed/reset command (§15) is the local-runnability story; it must reproduce the exact demo state from a clean database.
+
+### 20.1 Codex documentation workflow
+
+Codex collaboration is a graded artifact, not paperwork: the README narrative feeds both the technical-implementation and quality-of-idea scores, and a single `/feedback` Codex Session ID must point to the thread where the majority of core functionality was built. What is scored is the *narrative and the code*, not raw chat logs — so the goal is to keep the collaboration legible and captured in the right place. Both builders follow the same process from day 1.
+
+**One-thread rule.** Build the core loop — the student-loop trust boundary (scoring, diagnosis, tutor, attempt gate) — inside a single identifiable Codex thread. Only one session ID can be submitted, so the spine must not be scattered across throwaway threads. Side experiments may live elsewhere; the core build lives in one place.
+
+**Session-ID capture.** Once the majority of the core loop is built, run `/feedback` in that thread and record the returned session ID in `CODEX_LOG.md` immediately. Verify the exact `/feedback` behavior in Codex itself, since it is Codex's own command. Do not defer this to Jul 21 — the thread must be identifiable when captured.
+
+**Daily `CODEX_LOG.md`.** Append entries as you build, not at the end. Each entry names what Codex did *and* the decision the builder made around it:
+
+```text
+2026-07-15 — Diagnostic pipeline
+- Codex: scaffolded Supabase schema + Zod validators for items/responses.
+- Decision (me): distractor_map carries misconception tags so diagnosis reads
+  the error pattern, not just right/wrong (§8).
+- GPT-5.6: consumes those tags to name the specific misconception at runtime.
+```
+
+**What the README narrative must show.** For each major piece, tell a three-part story: (1) where Codex accelerated the work (scaffolding, schema, boilerplate, OpenAI wiring, tests); (2) where the builder made the key product/engineering/design call (the "model suggests, code decides" principle in §5, the trust boundaries, the scope cuts in §3); (3) where GPT-5.6 is load-bearing at runtime (error-pattern diagnosis, Socratic hints, attempt verification). The contrast — Codex sped the plumbing, the builders owned the pedagogy and safety architecture, GPT-5.6 does the per-student reasoning — is what the rubric rewards.
+
+**Corroboration.** Commit often with messages that name decisions, and build the core loop in Codex rather than hand-typing then pasting, so git history and the submitted session thread tell the same story as the README.
