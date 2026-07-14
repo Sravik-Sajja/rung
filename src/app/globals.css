@@ -1,0 +1,9 @@
+/* Global Tailwind layers and small app-wide browser defaults. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #f8fafc; color: #172033; font-family: Arial, sans-serif; }
+a { color: inherit; }
+button { cursor: pointer; }
