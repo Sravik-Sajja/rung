@@ -245,10 +245,20 @@ For the main demo student, the selected diagnosis must be stable: **finds no com
 ### Practice selection algorithm
 
 1. Identify the selected weak sub-skill and any direct unmet prerequisite.
-2. Select 3–4 validated active items from the bank, beginning with the prerequisite where applicable.
+2. Select 3–4 validated active items for that skill, beginning with the prerequisite where applicable.
 3. Order from concrete/scaffolded to target-level difficulty.
-4. Do not generate novel math questions during the live demo.
-5. If a future version adapts an item with AI, validate the resulting answer and solution before publication and retain the original item identifier.
+4. Items come from the generation pipeline in §8.1, not a hand-typed bank. The demo replays a **frozen, pre-generated set** so the live moment is deterministic; the product may generate on demand because every item passes the validator before it is shown.
+
+### 8.1 Item generation pipeline
+
+Questions are **generated, not hard-coded** — but the math is owned by deterministic code and the language is owned by the model, so the model can never invent a wrong answer key. Both halves run in the demo path.
+
+1. **Parametric core (deterministic).** A template plus a seeded number picker produces the item skeleton: the operands, the exact computed correct answer, and the misconception distractors computed from known wrong procedures (e.g., adding numerators and denominators yields `2/5 + 1/3 → 3/8`, tagged `adds_num_and_denom`). This step alone yields a valid, solvable item and its `distractor_map` for free — no LLM, no hallucination risk.
+2. **LLM wrap (GPT-5.6).** The model is given the fixed operands and correct answer and asked to write a word-problem context around them, explicitly forbidden to change any number or introduce a second operation. This is where GPT-5.6 is load-bearing in item creation, and it is deliberately kept in the demo path.
+3. **Validator (deterministic, mandatory).** Re-derive the answer implied by the wrapped problem and confirm it equals the parametric answer, that no extra operation was introduced, and that the declared sub-skill still holds. On any failure, discard and retry once, then fall back to the bare parametric item from step 1. Nothing reaches a learner without passing this gate.
+4. **Freeze for the demo.** Pre-generate the exact items Maya and the seeded class see, run them through the validator, and cache them keyed by `item_id`. The demo never calls generation live for a required result (§6 cache policy).
+
+The number picker must be seedable/deterministic (no `Math.random()` in a way that breaks reproducibility) so a fresh seed reproduces the same demo items (§18).
 
 **Within-session resurfacing.** Full multi-week spaced repetition stays out of scope (§3), but the retrieval-practice pedagogy is honored in miniature: an item answered incorrectly during a practice session is re-queued once, later in the same session, before the session is marked complete. A sub-skill still below `mastered` at session end is flagged on `/student/mastery` as "will come back," which is what the student-facing copy narrates as the resurfacing loop. This is a `practice_session_items.status` transition (`missed → requeued`), not a scheduler.
 
@@ -314,6 +324,18 @@ The UI must label this feature “See a peer’s approach” and explain the gat
 
 For the demo, pre-generate and seed the common-denominator group plan. The UI may still show that it was AI-generated, but must not wait on the model to make the moment work.
 
+### 9.5 Photo of work → tutor help
+
+A student stuck on an item may upload a photo of their handwritten work and ask for help. This extends the tutor rung (§6a "stuck → AI tutor"); it does not replace typed scoring.
+
+1. The client uploads the image to a **Supabase Storage** bucket; the server sends it to a **vision-capable OpenAI model** with the current item context.
+2. The model reads the work and feeds the **tutor hint ladder** (§9.2) — it identifies where the work went wrong and returns a hint at the requested level, never the answer. The same answer-leak check applies.
+3. **Trust-boundary rule:** a vision reading of handwriting is fuzzy, so it lives in the **hint path (low stakes), never the scoring path.** Correctness is still decided by `answer_spec` on a typed or explicitly confirmed final answer. If the photo is used as the peer-gate attempt, the extracted answer must be **confirmed by the student** ("I see `3/8` — is that your answer?") before it is scored or verified.
+4. **Demo safety:** live handwriting recognition can misread on stage, so pre-capture the demo photo(s), run them through the pipeline ahead of time, and cache the vision result keyed by a stable image hash. The live moment replays the cached reading; a fresh upload may call the model but must fall back to the cached hint on timeout, error, or low confidence.
+5. **Privacy:** store the minimum image needed, strip it after the session, never log it, and use only fictional/demo work in seeds and recordings (§15).
+
+This is a scoped stretch feature: it must not delay the core student journey (§8.1 through §9.3) and is cut first if the Jul 19 integration outcome is at risk.
+
 ## 10. AI contracts and guardrails
 
 AI output must be JSON validated against a TypeScript schema before it influences the UI or database.
@@ -321,7 +343,8 @@ AI output must be JSON validated against a TypeScript schema before it influence
 | Feature | Input | Permitted output | Hard guardrail |
 | --- | --- | --- | --- |
 | Error-pattern diagnosis | Item IDs, correct/incorrect responses, declared skills, misconception tags from `distractor_map` | One supported misconception label and short explanation | Cannot alter scores, mastery evidence, or item alignment; cannot name a misconception without a seeded tag supporting it |
-| Tutor | Current item, safe context, hint level | One hint at requested level | No final answer, no full solution, no unrelated tutoring |
+| Item wrap (§8.1) | Fixed operands, computed correct answer, sub-skill, difficulty | A word-problem context around the given numbers | May not change any number, the answer, or the operation; validator rejects any drift before the item is shown |
+| Tutor | Current item, safe context, hint level; optionally a vision reading of uploaded work (§9.5) | One hint at requested level | No final answer, no full solution, no unrelated tutoring |
 | Attempt verifier | Current item, attempt, explanation | `on_topic`, `non_trivial`, brief retry/support message | Does not decide final-answer correctness |
 | Lesson-plan draft | Group skill, sizes, aggregate evidence, duration | Objective, materials, timed steps, checks for understanding, and a matched practice set (references to validated bank `item_id`s for the group's sub-skill) | Must not invent student PII, claim evidence not provided, or reference an item not in the validated bank |
 | Video vetting (offline/pre-build) | Candidate metadata/transcript and target skill | Relevance decision and rationale | Only recommendations already manually approved and seeded reach the app |
@@ -406,23 +429,25 @@ It must include:
 - Maya as the primary walkthrough student.
 - At least three students with the common-denominator gap, so the teacher group is convincing.
 - At least one student in each visible mastery state to make the heatmap legible.
-- 4–5 diagnostic items that yield distinct, explainable error patterns, each with a seeded `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
+- 4–5 diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
 - 3–4 practice items for each possible demonstrated target skill.
 - 3–4 reviewed peer approaches for the primary practice item.
 - One video per featured sub-skill with provider, title, URL, and verification note.
 - One 15–20 minute plan for the common-denominator teacher group.
+- One or two pre-captured photos of fictional handwritten work for the §9.5 photo-help demo, with their vision readings and hints pre-cached.
 
-All names and responses must be fictional. Do not use real student information in local seeds, screenshots, prompts, or logs.
+Diagnostic and practice items are produced by the §8.1 generation pipeline (parametric core + LLM wrap + validator) and then **frozen** into the seed, not hand-typed. "Seeded" here means the generated, validated demo set is captured so a fresh reset reproduces it exactly — the pipeline runs at authoring time, not on stage. All names, work samples, and responses must be fictional. Do not use real student information in local seeds, screenshots, prompts, or logs.
 
 ## 15. Reliability and safety checklist
 
-- Validate every bank item and its exact answer before it is seeded.
+- Every item passes the §8.1 validator (clean computed answer, no operation drift, correct sub-skill) before it can be shown or seeded — whether parametric or LLM-wrapped.
 - Treat all model content as untrusted until schema and policy checks pass.
 - Keep OpenAI and Supabase service keys in `.env.local`; commit only `.env.example` with variable names.
 - Never expose service-role keys or OpenAI keys to the browser.
 - Do not persist raw chain-of-thought or ask models to provide it.
 - Store only the minimum attempt text needed for the demo; do not log raw student inputs in console output.
-- Pre-cache all demo-critical diagnosis, tutor, attempt-verification, and lesson-plan outputs.
+- For photo help (§9.5): store the minimum image, strip it after the session, never log it, and use only fictional handwritten work.
+- Pre-cache all demo-critical diagnosis, tutor, attempt-verification, lesson-plan, item-generation, and photo-reading outputs.
 - Include loading, retry, and fallback states for each AI-dependent interaction.
 - Provide a documented command to reset the database to the canonical seed state before every rehearsal or recording.
 - Use a clear prototype notice: not for grading, not a substitute for teacher judgment.
@@ -437,7 +462,8 @@ Prioritize tests for trust boundaries over visual polish.
 - Item scoring cannot accept a wrong answer as correct.
 - Diagnostic mapping selects prerequisite gaps before target-only gaps.
 - `distractor_map` resolves a seeded wrong answer to its misconception tag, and the diagnosis rejects any misconception label not backed by a collected tag.
-- Practice selection respects skill order and yields only validated bank items.
+- Practice selection respects skill order and yields only validated items.
+- The parametric core computes the correct answer and misconception distractors for a template, and the §8.1 validator rejects an LLM-wrapped item whose answer, operation, or sub-skill drifted from the parametric skeleton.
 - A missed practice item is re-queued once within the session before completion.
 - Peer approach cannot unlock without a verified attempt.
 - Full peer solution cannot unlock without a correct answer.
@@ -450,6 +476,8 @@ Prioritize tests for trust boundaries over visual polish.
 - A complete student flow updates mastery and appears on the teacher dashboard.
 - Model adapter schema failure produces a fallback response, not an app failure.
 - The teacher group page returns its cached plan and vetted video with the OpenAI API unavailable.
+- The item pipeline falls back to the bare parametric item when the LLM wrap fails validation, and the frozen demo set is reproduced identically from a fresh seed.
+- Photo help returns a cached hint (never a final answer) when the vision model is unavailable, and never scores correctness from the image alone.
 
 ### AI-output evals
 
@@ -505,6 +533,38 @@ These are intentionally not decided for the hackathon MVP. Do not introduce them
 - Pricing, district procurement, and LMS integrations.
 
 When Rung moves beyond a prototype, these decisions require dedicated design and review rather than incremental feature work.
+
+### 19.1 Multi-subject scaling roadmap (vision, not MVP)
+
+This subsection records how Rung grows past one fractions topic, so the scale story is on record for judging and future planning. **None of it is built for the hackathon.** The MVP uses no vector database, no embeddings, and no semantic retrieval: "why an answer is wrong" is `answer_spec` scoring plus an exact `distractor_map` lookup plus bounded model classification into a curated tag set, all in relational Postgres. A vector layer is deliberately excluded now because the MVP domain (one topic, five sub-skills, a dozens-item bank) is small enough to enumerate, and a similarity layer would add an opaque failure mode without buying accuracy.
+
+**The axis that matters is not subject count — it is checkable vs. open-response.**
+
+| Concern | More checkable subjects (math, numeric science, grammar) | Open-response subjects (writing, reading, open explanation) |
+| --- | --- | --- |
+| Correctness | Still `answer_spec` (numeric/symbolic/MCQ/pattern), deterministic | Rubric grading by the model; no objective key |
+| "Why it's wrong" | Distractor map + bounded classification into a curated taxonomy | Semantic; model reasons against a rubric, clustering discovers patterns |
+| Trust spine | Holds intact — code decides | Breaks the clean line — the model *is* the grader; needs a new trust model |
+| Vector layer | Supporting only (content, authoring, discovery) | Closer to the center (semantic diagnosis + retrieval) |
+
+Adding more *checkable* subjects is a content-scale change, not an architectural one: the deterministic spine is a per-subject pattern that replicates. Open-response is the genuine architectural fork.
+
+**The schema is already multi-subject shaped.** The `topic → subskill → item` hierarchy (§7) is not hard-coded to fractions, and `answer_spec` already carries a validation method. Going multi-subject in checkable domains is mostly: add a `subjects` table above `topics`; seed more of the same tables; build authoring tooling (the real cost — hand-authoring item banks and `distractor_map`s does not scale). `answer_spec.validation_method` is forward-compatible with an added `rubric` method for open-response later.
+
+**Where a vector layer enters — always behind the deterministic decision spine, never in the grading hot path.** Implemented as `pgvector` inside the same Supabase Postgres, not new infrastructure:
+
+- **Content retrieval** — embed `(sub-skill + misconception + grade)`, nearest-neighbor search a large video/worked-example library for *candidates*, then pass them through the same verification gate (§7, §10) before surfacing. The search proposes; the guardrail decides.
+- **Authoring pipeline** — dedup near-identical items, retrieve similar items to seed generation.
+- **Offline misconception discovery** — batch-embed the free-text "what did you try?" responses and novel wrong answers, cluster them, and have a human curate emergent clusters into new taxonomy tags. Runs offline, never on a graded answer.
+
+**Open-response fork — what changes when writing/reading are added:** grading becomes rubric-based model judgment (store the rubric and rationale, not a boolean); diagnosis becomes semantic; auditability weakens, so new guardrails are mandatory — rubric transparency, confidence thresholds, human-in-the-loop for anything consequential, calibration against human graders, and no high-stakes grading (consistent with §19).
+
+**Phased path that discards nothing:**
+
+1. MVP — one topic, fully deterministic + `distractor_map`.
+2. Fractions → all of middle-school math — replicate the pattern, build authoring tooling, add `pgvector` for content retrieval. Spine unchanged.
+3. Adjacent checkable subjects — same spine, more taxonomies.
+4. Open-response subjects — introduce rubric grading + semantic diagnosis + human-in-the-loop. The architecture extends here and the trust model is rebuilt.
 
 ## 20. Submission deliverables and judging access
 
