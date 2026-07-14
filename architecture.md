@@ -200,6 +200,8 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 
 `answer_spec` must be a structured JSON value such as a normalized fraction, accepted equivalent values, and validation method. It must not rely only on prose in the item prompt.
 
+**Resurfacing storage note.** `practice_session_items` must support an item appearing at its original position and once later as a requeued occurrence. Use a row ID or explicit occurrence key rather than relying only on a `(practice_session_id, item_id)` uniqueness constraint.
+
 `distractor_map` is the mechanism behind the product's core claim: diagnosis reads the *error pattern in wrong answers*, not just right/wrong. It maps each seeded wrong answer choice (or a recognizable wrong-answer form for free-entry items) to a predefined misconception tag — for example, `"3/7" → adds_numerators_and_denominators`. Diagnostic items must seed distractors whose selection is diagnostic, so that *which* wrong answer a student picks names the misconception. Misconception tags are drawn from a small fixed vocabulary aligned to the sub-skills in §7.
 
 ### Schema delivery priority
@@ -259,6 +261,8 @@ Questions are **generated, not hard-coded** — but the math is owned by determi
 4. **Freeze for the demo.** Pre-generate the exact items Maya and the seeded class see, run them through the validator, and cache them keyed by `item_id`. The demo never calls generation live for a required result (§6 cache policy).
 
 The number picker must be seedable/deterministic (no `Math.random()` in a way that breaks reproducibility) so a fresh seed reproduces the same demo items (§18).
+
+**Re-wrap invariant.** If the LLM wording step is implemented, it may change only the learner-facing prompt. It must preserve the parametric item's ID, operands, computed answer, `answer_spec`, `distractor_map`, sub-skill, difficulty, and solution steps. Re-freezing updates the existing item record/cache key rather than creating a new ID.
 
 **Within-session resurfacing.** Full multi-week spaced repetition stays out of scope (§3), but the retrieval-practice pedagogy is honored in miniature: an item answered incorrectly during a practice session is re-queued once, later in the same session, before the session is marked complete. A sub-skill still below `mastered` at session end is flagged on `/student/mastery` as "will come back," which is what the student-facing copy narrates as the resurfacing loop. This is a `practice_session_items.status` transition (`missed → requeued`), not a scheduler.
 
@@ -349,6 +353,10 @@ AI output must be JSON validated against a TypeScript schema before it influence
 | Lesson-plan draft | Group skill, sizes, aggregate evidence, duration | Objective, materials, timed steps, checks for understanding, and a matched practice set (references to validated bank `item_id`s for the group's sub-skill) | Must not invent student PII, claim evidence not provided, or reference an item not in the validated bank |
 | Video vetting (offline/pre-build) | Candidate metadata/transcript and target skill | Relevance decision and rationale | Only recommendations already manually approved and seeded reach the app |
 
+### 10.1 Shared AI contract
+
+The exact adapter methods, result/fallback objects, cache behavior, and `ai_runs` requirements are defined in [contracts.md](./contracts.md#ai-adapter). Track A calls that contract; Track B alone implements live model behavior behind it. No feature module calls OpenAI directly or defines a competing result shape.
+
 ### Prompting requirements
 
 - Prompts must state the learner grade band, target sub-skill, and known answer only when required for safety checking—not in tutor content generation if it would encourage leakage.
@@ -383,6 +391,10 @@ Exact routing may evolve, but server operations must have these contracts.
 | `GET /api/teacher-groups/:groupId/plan` | none | cached/generated plan and matching video |
 
 All request bodies are validated with shared schemas. IDs are checked against the seeded demo data; do not trust a client-provided student or class ID merely because login is out of scope.
+
+### 11.1 Shared API contract
+
+The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fixtures are defined in [contracts.md](./contracts.md#student-api). Track A owns route handlers/server actions. Track C uses only the checked-in shared schemas and fixtures until those handlers are live.
 
 ## 12. Frontend information architecture
 
@@ -503,6 +515,22 @@ Before recording or presenting, run the complete 3-minute journey using the same
 This allocation is intentionally outcome-based. The builders should swap implementation ownership freely, but no one should begin stretch features before the Jul 19 integration outcome is complete.
 
 **Daily throughout, not only on Jul 21:** keep a running `CODEX_LOG.md` noting each place Codex made a key decision or saved meaningful time, and capture the `/feedback` session ID from the session where the core loop was built. The submission asks for this evidence; reconstructing it on the final day loses most of it.
+
+### 17.1 Parallel implementation addendum
+
+The date-based schedule above remains the delivery timeline. This addendum defines the safe parallelization shape for that work.
+
+**Phase 0 — one owner, serial and blocking.** Before feature tracks begin, ship the migrations, answer-spec normalizer/tests, deterministic parametric generator/validator, frozen seed data/mastery matrix, seed/reset command, shared IDs, and the adapter/API contracts in `contracts.md`. The LLM word-problem wrapper and photo help are not Phase-0 work.
+
+After Phase 0 is merged, fan out without overlapping ownership:
+
+- **Track A — Domain and API:** deterministic scoring, diagnosis evidence/tag collection, mastery updates, practice selection/requeue, peer unlock rules, and every API route/server action. It calls the AI contract but never OpenAI directly.
+- **Track B — AI:** structured outputs, prompts, `ai_runs`, caches/fallbacks, tutor leakage checks/evals, diagnosis explanation, attempt verification, and LLM item wrapping. Wrapped items retain their original identifiers and deterministic answer data.
+- **Track C — Student UI:** diagnostic, diagnosis, practice/hint/peer gate, and mastery routes against the shared DTOs/fixtures. Photo help is outside this track and is cut before it threatens the core demo.
+
+**Phase F — integration.** One integration owner runs the cross-track tests and rehearsal: reset the seed, complete Maya's journey, verify that mastery reaches the heatmap/group, test the cached attempt-gate moment, and rehearse with OpenAI unavailable. Track owners fix failures in their own areas and record outcomes in `IMPLEMENTATION_LOG.md`.
+
+The hard rule is that Tracks A, B, and C do not start until Phase-0 contracts and seed data are merged. This prevents schema, interface, and fixture collisions while retaining the original daily schedule.
 
 ## 18. Definition of done
 
