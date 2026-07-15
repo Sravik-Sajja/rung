@@ -160,3 +160,23 @@ Use this template for every meaningful change:
 - Teacher mastery, groups, and plans are still in-memory demo data; `supabase/seed.ts` must persist the canonical matrix and plans before the demo is database-backed.
 - Group plans are static cached fallback content, not model-generated records; add `ai_runs`, cache metadata, and persisted `lesson_plans` before claiming live AI generation.
 - Video records use a clearly labeled placeholder URL. Replace each with a manually reviewed, pre-vetted resource before rehearsal.
+## 2026-07-14 — teacher-data foundation handoff
+
+### Completed
+
+- Added `supabase/migrations/002_partner_heatmap_foundation.sql` with a constrained mastery level, `evidence_summary`, occurrence-capable practice session items, supporting indexes, and the `class_mastery_heatmap` view.
+- Added `src/lib/demo/contracts.ts` with canonical IDs for the demo class, Maya, the fractions topic, and `find-common-denominator`, plus the shared mastery enum and heatmap-cell shape.
+- Replaced the seed placeholder with deterministic, idempotent Supabase upserts for an eight-student fractions class, skill hierarchy, diagnostic/practice items, and a complete 8 × 5 mastery matrix.
+- Seed data includes Maya plus Diego and Zara as `needs_support` on `find-common-denominator`, and includes every mastery level in the class data.
+- Added the isolated teacher heatmap normalizer/fixture and tests in `src/lib/teacher/`.
+
+### Validation
+
+- `npm test`: 5 files / 14 tests passed.
+- Seed command transpiles successfully and stops with the expected missing-credentials message until `.env.local` is configured.
+
+### Partner handoff
+
+- Query `class_mastery_heatmap` filtered by `class_id = 'fractions-demo-class'`.
+- Consume rows as `{ studentId, subskillId, level, evidenceSummary }` through `src/lib/teacher/heatmap.ts`.
+- Use `src/lib/demo/contracts.ts` for the canonical IDs and mastery-level enum; do not duplicate them in dashboard code.
