@@ -200,3 +200,35 @@ Use this template for every meaningful change:
 - Query `class_mastery_heatmap` filtered by `class_id = 'fractions-demo-class'`.
 - Consume rows as `{ studentId, subskillId, level, evidenceSummary }` through `src/lib/teacher/heatmap.ts`.
 - Use `src/lib/demo/contracts.ts` for the canonical IDs and mastery-level enum; do not duplicate them in dashboard code.
+
+## 2026-07-15 — Track A student-flow API and UI foundation
+
+### Completed
+
+#### API and state
+
+- Added the previously missing API handlers: diagnostic completion, practice retrieval, peer-attempt submission, and gated peer-solution retrieval.
+- Added `src/lib/student/demo-flow.ts`, a deterministic local fallback that records submitted answers, derives Maya's supported common-denominator diagnosis, creates ordered practice sessions, requeues a missed item once, and enforces peer unlock state.
+- Updated `POST /api/responses` so its local fallback state is updated even when a configured Supabase response write succeeds; downstream routes can consume the same response during the transition to full persistence.
+
+#### Student UI
+
+- Replaced the diagnostic placeholder with a client flow that submits Maya’s response, completes the diagnostic, saves the returned diagnosis locally for display, and follows the returned practice-session ID.
+- Connected `/student/diagnosis` to the server-derived diagnosis result and `/student/practice/[sessionId]` to practice-session retrieval.
+- Connected answer submission, tutor hints, meaningful-attempt verification, and gated peer-solution display on the practice screen.
+- Corrected local practice requeue handling so a requeued occurrence—not the original missed occurrence—is marked when the student retries it.
+
+#### Tests
+
+- Added student-flow tests covering diagnostic-to-practice creation, session recovery, poor-attempt rejection, approach-only unlock, and full-solution unlock after a deterministic correct score.
+
+### Validation
+
+- `npm test`: 6 files / 20 tests passed.
+- `npm run build`: passed.
+- `git diff --check`: passed.
+
+### Bugs / follow-ups
+
+- The student experience is intentionally basic and only demonstrates Maya’s one-item diagnostic. Add the full 4–5 item diagnostic progression after the persistence layer is complete.
+- The flow still relies on shared process-local demo state and browser session storage; replace both with durable Supabase-backed state for deployment.

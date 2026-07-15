@@ -52,6 +52,18 @@ export const demoItems: Item[] = [
   { id: "subtract-unlike-1", subskillId: "subtract-unlike-denominators", prompt: "What is 3/4 − 1/3?", answerSpec: { accepted: ["5/12"] }, distractorMap: { "2/1": "subtracts_numerators_and_denominators" } }
 ];
 
+export const demoDiagnosticItems: Item[] = [{
+  id: "diagnostic-add-unlike-1",
+  subskillId: "add-unlike-denominators",
+  prompt: "What is 1/3 + 1/4?",
+  answerSpec: { accepted: ["7/12"] },
+  distractorMap: { "2/7": "adds_numerators_and_denominators" }
+}];
+
+export function findDemoItem(itemId: string) {
+  return [...demoItems, ...demoDiagnosticItems].find((item) => item.id === itemId);
+}
+
 const vettedVideo = (title: string): TeacherGroupPlan["video"] => ({ title, provider: "Rung reviewed resource", url: "#", verificationNote: "Placeholder for the pre-vetted video URL seeded before the demo." });
 
 export const demoGroupPlans: Record<string, TeacherGroupPlan> = {
