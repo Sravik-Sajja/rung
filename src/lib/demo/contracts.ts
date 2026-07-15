@@ -22,15 +22,13 @@ export const masteryLevels = [
 
 export const canonicalDemoStudents = [
   { id: canonicalDemoIds.mayaStudentId, displayName: "Maya Chen", isDemoDefault: true },
+  { id: "diego-alvarez", displayName: "Diego Alvarez" },
+  { id: "zara-williams", displayName: "Zara Williams" },
   { id: "noah-brooks", displayName: "Noah Brooks" },
   { id: "ava-patel", displayName: "Ava Patel" },
   { id: "leo-martin", displayName: "Leo Martin" },
   { id: "sofia-nguyen", displayName: "Sofia Nguyen" },
   { id: "ethan-williams", displayName: "Ethan Williams" },
-  { id: "isabella-ross", displayName: "Isabella Ross" },
-  { id: "mateo-garcia", displayName: "Mateo Garcia" },
-  { id: "zoe-kim", displayName: "Zoe Kim" },
-  { id: "jackson-lee", displayName: "Jackson Lee" },
 ] as const;
 
 export const canonicalDemoSubskillIds = [

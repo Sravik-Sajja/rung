@@ -101,7 +101,7 @@ Use this template for every meaningful change:
 
 ### Completed
 
-- Extended the canonical seed to the same 10-student, five-sub-skill mastery matrix used by the teacher demo, including cached teacher groups, lesson-plan records, and video placeholders.
+- Extended the canonical seed to the eight-student, five-sub-skill mastery matrix used by the teacher demo, including cached teacher groups, lesson-plan records, and video placeholders. Maya, Diego, and Zara are the `find-common-denominator` needs-support cohort.
 - Exported the roster, sub-skill, group, and practice-item identifiers from `src/lib/demo/contracts.ts`; the in-memory teacher fallback now uses the canonical class, number-line, and common-denominator IDs too.
 - Added `src/lib/teacher/repository.ts`. Teacher dashboard and group-plan API handlers read Supabase first and fall back deterministically when server credentials or seeded rows are unavailable.
 - Added the first persisted student-loop mutation in `src/lib/student/response-service.ts`. `POST /api/responses` now records a response and upserts deterministic mastery when Supabase is configured; local demo scoring remains a clearly bounded fallback.
@@ -162,7 +162,7 @@ Use this template for every meaningful change:
 
 ### Completed
 
-- Expanded temporary demo data to 10 fictional students, five fraction sub-skills, a 50-cell mastery matrix, five validated-bank practice items, and seeded group plans.
+- Expanded temporary demo data to the canonical eight fictional students, five fraction sub-skills, a 40-cell mastery matrix, five validated-bank practice items, and seeded group plans.
 - Added deterministic grouping in `src/lib/teacher/grouping.ts`. It groups only `needs_support` mastery records and requires at least two students per group.
 - Replaced `/teacher/dashboard` placeholder content with an accessible CSS-grid heatmap. Status is communicated by text and pale color: red for needs support, yellow for developing, green for mastered, and gray for not started.
 - Implemented `/teacher/groups/[groupId]` with group members, a timed mini-lesson, materials, check for understanding, matched practice items, and a video-resource placeholder.

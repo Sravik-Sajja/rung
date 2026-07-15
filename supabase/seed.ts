@@ -52,18 +52,16 @@ const levelSummary: Record<typeof masteryLevels[number], string> = {
   mastered: "Two correct target-level responses.",
 };
 
-// Rows correspond to canonicalDemoSubskillIds. This is a complete 10 x 5 matrix.
+// Rows correspond to canonicalDemoSubskillIds. This is the canonical complete 8 x 5 matrix.
 const masteryLevelsByStudent: Record<string, Array<typeof masteryLevels[number]>> = {
   "maya-chen": ["developing", "mastered", "needs_support", "needs_support", "not_started"],
-  "noah-brooks": ["mastered", "developing", "needs_support", "needs_support", "developing"],
-  "ava-patel": ["developing", "mastered", "needs_support", "developing", "needs_support"],
-  "leo-martin": ["needs_support", "developing", "developing", "not_started", "not_started"],
+  "diego-alvarez": ["needs_support", "developing", "needs_support", "developing", "not_started"],
+  "zara-williams": ["developing", "mastered", "needs_support", "needs_support", "developing"],
+  "noah-brooks": ["mastered", "developing", "developing", "developing", "developing"],
+  "ava-patel": ["developing", "needs_support", "developing", "mastered", "needs_support"],
+  "leo-martin": ["needs_support", "developing", "mastered", "not_started", "not_started"],
   "sofia-nguyen": ["mastered", "mastered", "mastered", "developing", "developing"],
   "ethan-williams": ["needs_support", "needs_support", "developing", "needs_support", "not_started"],
-  "isabella-ross": ["developing", "developing", "mastered", "mastered", "mastered"],
-  "mateo-garcia": ["not_started", "needs_support", "needs_support", "developing", "not_started"],
-  "zoe-kim": ["mastered", "developing", "mastered", "developing", "developing"],
-  "jackson-lee": ["developing", "not_started", "developing", "needs_support", "needs_support"],
 };
 
 const groupPlans = [

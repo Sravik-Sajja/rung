@@ -312,7 +312,7 @@ export type GetStudentMasteryResponse = {
 
 The current teacher routes query Supabase when server credentials are configured and use the deterministic fixture projection only when that data source is unavailable:
 
-- `GET /api/classes/fractions-demo-class/dashboard` returns 10 fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups.
+- `GET /api/classes/fractions-demo-class/dashboard` returns the canonical eight fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups. Maya, Diego, and Zara form the `find-common-denominator` needs-support cohort.
 - `GET /api/teacher-groups/:groupId/plan` returns a seeded 15–18 minute plan with matched bank-item IDs and a resource record.
 - A group is created only when at least two students have stored `needs_support` status for the same sub-skill. The UI does not use an AI model to choose mastery levels or group membership.
 

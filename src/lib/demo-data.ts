@@ -2,24 +2,14 @@
 import type { DemoStudent, Item, MasteryRecord, Subskill, TeacherGroupPlan } from "@/lib/types";
 import {
   canonicalDemoIds,
+  canonicalDemoStudents,
   canonicalDemoSubskillIds,
   canonicalTeacherGroupIds,
 } from "@/lib/demo/contracts";
 
 export const DEMO_CLASS_ID = canonicalDemoIds.classId;
 
-export const demoStudents: DemoStudent[] = [
-  { id: "maya-chen", displayName: "Maya Chen", gradeBand: "6–8" },
-  { id: "noah-brooks", displayName: "Noah Brooks", gradeBand: "6–8" },
-  { id: "ava-patel", displayName: "Ava Patel", gradeBand: "6–8" },
-  { id: "leo-martin", displayName: "Leo Martin", gradeBand: "6–8" },
-  { id: "sofia-nguyen", displayName: "Sofia Nguyen", gradeBand: "6–8" },
-  { id: "ethan-williams", displayName: "Ethan Williams", gradeBand: "6–8" },
-  { id: "isabella-ross", displayName: "Isabella Ross", gradeBand: "6–8" },
-  { id: "mateo-garcia", displayName: "Mateo Garcia", gradeBand: "6–8" },
-  { id: "zoe-kim", displayName: "Zoe Kim", gradeBand: "6–8" },
-  { id: "jackson-lee", displayName: "Jackson Lee", gradeBand: "6–8" }
-];
+export const demoStudents: DemoStudent[] = canonicalDemoStudents.map((student) => ({ id: student.id, displayName: student.displayName, gradeBand: "6–8" }));
 
 export const demoSubskills: Subskill[] = [
   { id: "equivalent-fractions", name: "Equivalent fractions" },
@@ -38,15 +28,13 @@ const levelSummary: Record<string, string> = {
 
 const masteryLevels: Record<string, string[]> = {
   "maya-chen": ["developing", "mastered", "needs_support", "needs_support", "not_started"],
-  "noah-brooks": ["mastered", "developing", "needs_support", "needs_support", "developing"],
-  "ava-patel": ["developing", "mastered", "needs_support", "developing", "needs_support"],
-  "leo-martin": ["needs_support", "developing", "developing", "not_started", "not_started"],
+  "diego-alvarez": ["needs_support", "developing", "needs_support", "developing", "not_started"],
+  "zara-williams": ["developing", "mastered", "needs_support", "needs_support", "developing"],
+  "noah-brooks": ["mastered", "developing", "developing", "developing", "developing"],
+  "ava-patel": ["developing", "needs_support", "developing", "mastered", "needs_support"],
+  "leo-martin": ["needs_support", "developing", "mastered", "not_started", "not_started"],
   "sofia-nguyen": ["mastered", "mastered", "mastered", "developing", "developing"],
-  "ethan-williams": ["needs_support", "needs_support", "developing", "needs_support", "not_started"],
-  "isabella-ross": ["developing", "developing", "mastered", "mastered", "mastered"],
-  "mateo-garcia": ["not_started", "needs_support", "needs_support", "developing", "not_started"],
-  "zoe-kim": ["mastered", "developing", "mastered", "developing", "developing"],
-  "jackson-lee": ["developing", "not_started", "developing", "needs_support", "needs_support"]
+  "ethan-williams": ["needs_support", "needs_support", "developing", "needs_support", "not_started"]
 };
 
 export const demoMastery: MasteryRecord[] = demoStudents.flatMap((student) =>

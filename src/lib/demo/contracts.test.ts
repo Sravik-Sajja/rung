@@ -23,7 +23,7 @@ describe("partner demo contracts", () => {
   });
 
   it("locks a complete teacher-compatible roster and 5-skill matrix shape", () => {
-    expect(canonicalDemoStudents).toHaveLength(10);
+    expect(canonicalDemoStudents).toHaveLength(8);
     expect(canonicalDemoStudents.map((student) => student.id)).toContain(canonicalDemoIds.mayaStudentId);
     expect(canonicalDemoSubskillIds).toHaveLength(5);
   });
