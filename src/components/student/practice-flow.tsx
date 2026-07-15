@@ -56,9 +56,9 @@ export function PracticeFlow({ sessionId }: { sessionId: string }) {
     if (response.ok) setPeerSolution(await response.json());
   }
 
-  async function submitPeerAttempt(attemptText: string, explanation: string) {
+  async function submitPeerAttempt({ attemptText }: { attemptText: string; photo: File | null }) {
     if (!currentItem) return;
-    const response = await fetch("/api/peer-attempts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: "maya-chen", itemId: currentItem.itemId, attemptText, explanation }) });
+    const response = await fetch("/api/peer-attempts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: "maya-chen", itemId: currentItem.itemId, attemptText, explanation: attemptText }) });
     const result = await response.json();
     if (!response.ok) return setMessage(result.error ?? "Could not check your attempt.");
     setMessage(result.retryMessage ?? "Peer approach unlocked.");

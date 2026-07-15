@@ -11,8 +11,8 @@ describe("student demo flow", () => {
   it("turns a supported diagnostic distractor into Maya's common-denominator practice session", async () => {
     recordLocalResponse({ studentId: maya, itemId: "diagnostic-add-unlike-1", answer: "2/7", context: "diagnostic" });
     const completed = await completeLocalDiagnostic(canonicalDemoIds.diagnosticAssignmentId, maya);
-    expect(completed && "diagnosis" in completed && completed.diagnosis.selectedSubskillId).toBe("find-common-denominator");
     if (!completed || "error" in completed) throw new Error("Expected diagnostic completion");
+    expect(completed.diagnosis.selectedSubskillId).toBe("find-common-denominator");
     const session = getLocalPracticeSession(completed.practiceSession.id, maya);
     expect(session?.items.map((item) => item.itemId)).toEqual(["common-denominator-1", "add-unlike-1", "subtract-unlike-1"]);
     expect(session?.items[0]).not.toHaveProperty("answerSpec");
