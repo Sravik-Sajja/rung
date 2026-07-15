@@ -137,3 +137,26 @@ Use this template for every meaningful change:
 
 - Local `node_modules` is incomplete in this environment: npm did not create `.bin` shims, and the TypeScript package lacks its standard `lib/*.d.ts` files. The `npm test` script now invokes Vitest's local entry point directly; TypeScript type-checking cannot run until dependencies are repaired/reinstalled in a healthy Node environment.
 - No database migrations, seed records, mastery/dashboard contracts, teacher pages, or API route behavior were changed by this work.
+
+## 2026-07-14 — teacher heatmap, groups, and seeded group plans
+
+### Completed
+
+- Expanded temporary demo data to 10 fictional students, five fraction sub-skills, a 50-cell mastery matrix, five validated-bank practice items, and seeded group plans.
+- Added deterministic grouping in `src/lib/teacher/grouping.ts`. It groups only `needs_support` mastery records and requires at least two students per group.
+- Replaced `/teacher/dashboard` placeholder content with an accessible CSS-grid heatmap. Status is communicated by text and pale color: red for needs support, yellow for developing, green for mastered, and gray for not started.
+- Implemented `/teacher/groups/[groupId]` with group members, a timed mini-lesson, materials, check for understanding, matched practice items, and a video-resource placeholder.
+- Added `GET /api/classes/:classId/dashboard` and `GET /api/teacher-groups/:groupId/plan`, both backed by the deterministic demo projection.
+- Added `supabase/migrations/002_teacher_groups.sql` with `teacher_groups`, `teacher_group_members`, and `lesson_plans` tables.
+- Updated `README.md` and `contracts.md` with the current teacher endpoints and response shapes.
+
+### Validation
+
+- `npm run build` passed after the teacher dashboard and group-plan work.
+- `git diff --check` passed.
+
+### Bugs / follow-ups
+
+- Teacher mastery, groups, and plans are still in-memory demo data; `supabase/seed.ts` must persist the canonical matrix and plans before the demo is database-backed.
+- Group plans are static cached fallback content, not model-generated records; add `ai_runs`, cache metadata, and persisted `lesson_plans` before claiming live AI generation.
+- Video records use a clearly labeled placeholder URL. Replace each with a manually reviewed, pre-vetted resource before rehearsal.

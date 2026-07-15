@@ -274,14 +274,25 @@ export type HeatmapCell = {
 };
 
 export type ClassDashboardResponse = {
+  classId: string;
+  students: Array<{ id: string; displayName: string; gradeBand: string }>;
+  subskills: Array<{ id: string; name: string }>;
   cells: HeatmapCell[];
   groups: Array<{ id: string; subskillId: string; label: string; studentIds: string[] }>;
 };
 
 export type TeacherGroupPlanResponse = {
   group: { id: string; subskillId: string; label: string; studentIds: string[] };
-  plan: { content: string; source: AiSource; promptVersion: string };
-  video: { title: string; provider: string; url: string; verificationNote: string };
+  plan: {
+    groupId: string;
+    objective: string;
+    durationMinutes: number;
+    materials: string[];
+    steps: Array<{ minutes: number; activity: string }>;
+    checkForUnderstanding: string;
+    practiceItemIds: string[];
+    video: { title: string; provider: string; url: string; verificationNote: string };
+  };
 };
 
 export type GetStudentMasteryResponse = {
@@ -296,6 +307,16 @@ export type GetStudentMasteryResponse = {
   }>;
 };
 ```
+
+### Current teacher implementation
+
+The current teacher routes conform to the shapes above using temporary in-memory data:
+
+- `GET /api/classes/rivera-fractions/dashboard` returns 10 fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups.
+- `GET /api/teacher-groups/:groupId/plan` returns a seeded 15–18 minute plan with matched bank-item IDs and a resource record.
+- A group is created only when at least two students have stored `needs_support` status for the same sub-skill. The UI does not use an AI model to choose mastery levels or group membership.
+
+The handler does not yet attach `AiSource` or `promptVersion` metadata because these plans are local static fallback content. Before persistence, seed the plan in `lesson_plans`, add cache/model metadata, and replace each placeholder video URL with its reviewed URL.
 
 ## Routes
 
