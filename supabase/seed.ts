@@ -1,6 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
-import { canonicalDemoIds, masteryLevels } from "../src/lib/demo/contracts";
+import {
+  canonicalDemoIds,
+  canonicalDemoStudents,
+  canonicalDemoSubskillIds,
+  canonicalTeacherGroupIds,
+  canonicalTeacherPracticeItemIds,
+  masteryLevels,
+} from "../src/lib/demo/contracts";
 
 loadEnvConfig(process.cwd());
 
@@ -12,77 +19,60 @@ if (!url || !serviceRoleKey) {
 }
 
 const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
-const { classId, teacherName, fractionsTopicId, commonDenominatorSubskillId, mayaStudentId, diagnosticAssignmentId } = canonicalDemoIds;
+const { classId, teacherName, fractionsTopicId, commonDenominatorSubskillId, diagnosticAssignmentId } = canonicalDemoIds;
 
-const students = [
-  { id: mayaStudentId, display_name: "Maya Chen", grade_band: "6-8", is_demo_default: true },
-  { id: "diego-ramirez", display_name: "Diego Ramirez", grade_band: "6-8", is_demo_default: false },
-  { id: "zara-bell", display_name: "Zara Bell", grade_band: "6-8", is_demo_default: false },
-  { id: "noah-brooks", display_name: "Noah Brooks", grade_band: "6-8", is_demo_default: false },
-  { id: "ava-patel", display_name: "Ava Patel", grade_band: "6-8", is_demo_default: false },
-  { id: "leo-martin", display_name: "Leo Martin", grade_band: "6-8", is_demo_default: false },
-  { id: "imani-johnson", display_name: "Imani Johnson", grade_band: "6-8", is_demo_default: false },
-  { id: "owen-kim", display_name: "Owen Kim", grade_band: "6-8", is_demo_default: false },
-] as const;
+const students = canonicalDemoStudents.map((student) => ({
+  id: student.id,
+  display_name: student.displayName,
+  grade_band: "6-8",
+  is_demo_default: student.id === canonicalDemoIds.mayaStudentId,
+}));
 
 const subskills = [
   { id: "equivalent-fractions", topic_id: fractionsTopicId, slug: "equivalent-fractions", name: "Equivalent fractions", description: "Recognize and generate equivalent fractions.", prerequisite_subskill_id: null },
   { id: "fraction-number-line", topic_id: fractionsTopicId, slug: "fraction-number-line", name: "Fractions on a number line", description: "Locate fractions on a number line.", prerequisite_subskill_id: "equivalent-fractions" },
   { id: commonDenominatorSubskillId, topic_id: fractionsTopicId, slug: commonDenominatorSubskillId, name: "Find a common denominator", description: "Rewrite fractions with a shared denominator.", prerequisite_subskill_id: "equivalent-fractions" },
   { id: "add-unlike-denominators", topic_id: fractionsTopicId, slug: "add-unlike-denominators", name: "Add fractions with unlike denominators", description: "Add fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
-  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract fractions with unlike denominators", description: "Subtract fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
+  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract fractions after finding a common denominator.", description: "Subtract fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
 ] as const;
 
 const items = [
-  {
-    id: "diagnostic-add-unlike-1",
-    subskill_id: "add-unlike-denominators",
-    item_type: "diagnostic",
-    prompt: "What is 1/3 + 1/4?",
-    answer_spec: { accepted: ["7/12"] },
-    solution_steps: ["Find a common denominator of 12.", "Rewrite 1/3 as 4/12 and 1/4 as 3/12.", "Add 4/12 and 3/12."],
-    difficulty: 1,
-    is_active: true,
-    distractor_map: { "2/7": "adds_numerators_and_denominators" },
-  },
-  {
-    id: "diagnostic-equivalent-1",
-    subskill_id: "equivalent-fractions",
-    item_type: "diagnostic",
-    prompt: "Which fraction is equivalent to 1/2?",
-    answer_spec: { accepted: ["2/4"] },
-    solution_steps: ["Multiply the numerator and denominator by the same number."],
-    difficulty: 1,
-    is_active: true,
-    distractor_map: { "1/4": "changes_only_denominator" },
-  },
-  {
-    id: "practice-common-denominator-1",
-    subskill_id: commonDenominatorSubskillId,
-    item_type: "practice",
-    prompt: "Rewrite 2/5 and 1/3 using a common denominator.",
-    answer_spec: { accepted: ["6/15,5/15"] },
-    solution_steps: ["Use 15 because it is a multiple of 5 and 3.", "Rewrite 2/5 as 6/15 and 1/3 as 5/15."],
-    difficulty: 1,
-    is_active: true,
-    distractor_map: { "2/8": "adds_denominators" },
-  },
+  { id: "equivalent-1", subskill_id: "equivalent-fractions", item_type: "practice", prompt: "Write a fraction equivalent to 1/2 with denominator 8.", answer_spec: { accepted: ["4/8"] }, solution_steps: ["Multiply the numerator and denominator by the same number."], difficulty: 1, is_active: true, distractor_map: { "1/8": "changes_denominator_only" } },
+  { id: "number-line-1", subskill_id: "fraction-number-line", item_type: "practice", prompt: "Which point is 3/4 of the way from 0 to 1?", answer_spec: { accepted: ["3/4"] }, solution_steps: ["Split the line into four equal parts and count three parts from zero."], difficulty: 1, is_active: true, distractor_map: { "1/3": "reverses_numerator_and_denominator" } },
+  { id: "common-denominator-1", subskill_id: commonDenominatorSubskillId, item_type: "practice", prompt: "What common denominator can you use for 1/3 and 1/4?", answer_spec: { accepted: ["12"] }, solution_steps: ["Use a number both 3 and 4 divide into evenly."], difficulty: 1, is_active: true, distractor_map: { "7": "adds_denominators" } },
+  { id: "add-unlike-1", subskill_id: "add-unlike-denominators", item_type: "practice", prompt: "What is 1/3 + 1/4?", answer_spec: { accepted: ["7/12"] }, solution_steps: ["Find a common denominator of 12.", "Rewrite the fractions as twelfths, then add."], difficulty: 1, is_active: true, distractor_map: { "2/7": "adds_numerators_and_denominators" } },
+  { id: "subtract-unlike-1", subskill_id: "subtract-unlike-denominators", item_type: "practice", prompt: "What is 3/4 - 1/3?", answer_spec: { accepted: ["5/12"] }, solution_steps: ["Rewrite both fractions in twelfths before subtracting."], difficulty: 1, is_active: true, distractor_map: { "2/1": "subtracts_numerators_and_denominators" } },
+  { id: "diagnostic-add-unlike-1", subskill_id: "add-unlike-denominators", item_type: "diagnostic", prompt: "What is 1/3 + 1/4?", answer_spec: { accepted: ["7/12"] }, solution_steps: ["Find a common denominator of 12.", "Rewrite 1/3 as 4/12 and 1/4 as 3/12.", "Add 4/12 and 3/12."], difficulty: 1, is_active: true, distractor_map: { "2/7": "adds_numerators_and_denominators" } },
 ] as const;
 
-const masteryByStudent: Record<string, Array<{ subskill_id: string; level: typeof masteryLevels[number]; evidence_count: number; evidence_summary: string }>> = {
-  "maya-chen": [
-    { subskill_id: "equivalent-fractions", level: "developing", evidence_count: 1, evidence_summary: "Can identify some equivalent fractions with support." },
-    { subskill_id: commonDenominatorSubskillId, level: "needs_support", evidence_count: 1, evidence_summary: "Added denominators directly instead of finding a common denominator." },
-    { subskill_id: "add-unlike-denominators", level: "needs_support", evidence_count: 1, evidence_summary: "Selected 2/7 for 1/3 + 1/4." },
-  ],
-  "diego-ramirez": [{ subskill_id: commonDenominatorSubskillId, level: "needs_support", evidence_count: 1, evidence_summary: "Needs support selecting a shared denominator." }],
-  "zara-bell": [{ subskill_id: commonDenominatorSubskillId, level: "needs_support", evidence_count: 1, evidence_summary: "Combined denominator values directly." }],
-  "noah-brooks": [{ subskill_id: commonDenominatorSubskillId, level: "developing", evidence_count: 1, evidence_summary: "Found a common denominator with one reminder." }],
-  "ava-patel": [{ subskill_id: commonDenominatorSubskillId, level: "not_started", evidence_count: 0, evidence_summary: "No recorded evidence yet." }],
-  "leo-martin": [{ subskill_id: commonDenominatorSubskillId, level: "mastered", evidence_count: 2, evidence_summary: "Found common denominators independently twice." }],
-  "imani-johnson": [{ subskill_id: "equivalent-fractions", level: "mastered", evidence_count: 2, evidence_summary: "Generated equivalent fractions independently twice." }],
-  "owen-kim": [{ subskill_id: "subtract-unlike-denominators", level: "developing", evidence_count: 1, evidence_summary: "Subtracts with a visual model and one prompt." }],
+const levelSummary: Record<typeof masteryLevels[number], string> = {
+  not_started: "No responses yet.",
+  needs_support: "Diagnostic evidence shows a gap.",
+  developing: "One supported correct response.",
+  mastered: "Two correct target-level responses.",
 };
+
+// Rows correspond to canonicalDemoSubskillIds. This is a complete 10 x 5 matrix.
+const masteryLevelsByStudent: Record<string, Array<typeof masteryLevels[number]>> = {
+  "maya-chen": ["developing", "mastered", "needs_support", "needs_support", "not_started"],
+  "noah-brooks": ["mastered", "developing", "needs_support", "needs_support", "developing"],
+  "ava-patel": ["developing", "mastered", "needs_support", "developing", "needs_support"],
+  "leo-martin": ["needs_support", "developing", "developing", "not_started", "not_started"],
+  "sofia-nguyen": ["mastered", "mastered", "mastered", "developing", "developing"],
+  "ethan-williams": ["needs_support", "needs_support", "developing", "needs_support", "not_started"],
+  "isabella-ross": ["developing", "developing", "mastered", "mastered", "mastered"],
+  "mateo-garcia": ["not_started", "needs_support", "needs_support", "developing", "not_started"],
+  "zoe-kim": ["mastered", "developing", "mastered", "developing", "developing"],
+  "jackson-lee": ["developing", "not_started", "developing", "needs_support", "needs_support"],
+};
+
+const groupPlans = [
+  { id: canonicalTeacherGroupIds[0], subskillId: canonicalDemoSubskillIds[0], objective: "Create and recognize equivalent fractions using visual and numerical models.", durationMinutes: 15, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[0]], videoTitle: "Equivalent fractions with visual models" },
+  { id: canonicalTeacherGroupIds[1], subskillId: canonicalDemoSubskillIds[1], objective: "Locate benchmark fractions accurately on a number line.", durationMinutes: 15, materials: ["Number-line strips", "Pencils"], practiceItemIds: [canonicalTeacherPracticeItemIds[1]], videoTitle: "Fractions on a number line" },
+  { id: canonicalTeacherGroupIds[2], subskillId: canonicalDemoSubskillIds[2], objective: "Find a shared denominator before combining fractions with unlike denominators.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards", "Practice cards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[3]], videoTitle: "Finding common denominators" },
+  { id: canonicalTeacherGroupIds[3], subskillId: canonicalDemoSubskillIds[3], objective: "Add fractions with unlike denominators by renaming each fraction first.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[3]], videoTitle: "Adding fractions with unlike denominators" },
+  { id: canonicalTeacherGroupIds[4], subskillId: canonicalDemoSubskillIds[4], objective: "Subtract fractions with unlike denominators after renaming each fraction.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[4]], videoTitle: "Subtracting fractions with unlike denominators" },
+] as const;
 
 async function assertNoError<T>({ error, data }: { error: { message: string } | null; data: T }) {
   if (error) throw new Error(error.message);
@@ -100,9 +90,17 @@ async function seed() {
   await assertNoError(await supabase.from("items").upsert(items));
   await assertNoError(await supabase.from("assignments").upsert({ id: diagnosticAssignmentId, class_id: classId, topic_id: fractionsTopicId, title: "Fractions check-in", mode: "diagnostic" }));
   await assertNoError(await supabase.from("assignment_items").delete().eq("assignment_id", diagnosticAssignmentId));
-  await assertNoError(await supabase.from("assignment_items").upsert(items.filter((item) => item.item_type === "diagnostic").map((item, position) => ({ assignment_id: diagnosticAssignmentId, item_id: item.id, position: position + 1 }))));
+  await assertNoError(await supabase.from("assignment_items").upsert([{ assignment_id: diagnosticAssignmentId, item_id: "diagnostic-add-unlike-1", position: 1 }]));
 
   const studentIds = students.map((student) => student.id);
+  const groups = await assertNoError(await supabase.from("teacher_groups").select("id").eq("class_id", classId));
+  const groupIds = groups.map((group) => group.id);
+  if (groupIds.length) {
+    await assertNoError(await supabase.from("lesson_plans").delete().in("teacher_group_id", groupIds));
+    await assertNoError(await supabase.from("teacher_group_members").delete().in("teacher_group_id", groupIds));
+    await assertNoError(await supabase.from("teacher_groups").delete().eq("class_id", classId));
+  }
+
   const sessions = await assertNoError(await supabase.from("practice_sessions").select("id").in("student_id", studentIds));
   const sessionIds = sessions.map((session) => session.id);
   if (sessionIds.length) {
@@ -113,19 +111,28 @@ async function seed() {
   await assertNoError(await supabase.from("attempt_submissions").delete().in("student_id", studentIds));
   await assertNoError(await supabase.from("peer_unlocks").delete().in("student_id", studentIds));
   await assertNoError(await supabase.from("mastery").delete().in("student_id", studentIds));
-  const masteryRows = students.flatMap((student) => subskills.map((subskill) => {
-    const override = masteryByStudent[student.id]?.find((record) => record.subskill_id === subskill.id);
-    return {
-      student_id: student.id,
-      subskill_id: subskill.id,
-      level: override?.level ?? "not_started",
-      evidence_count: override?.evidence_count ?? 0,
-      evidence_summary: override?.evidence_summary ?? "No recorded evidence yet.",
-    };
+
+  const masteryRows = students.flatMap((student) => canonicalDemoSubskillIds.map((subskillId, index) => {
+    const level = masteryLevelsByStudent[student.id][index];
+    return { student_id: student.id, subskill_id: subskillId, level, evidence_count: level === "mastered" ? 2 : level === "not_started" ? 0 : 1, evidence_summary: levelSummary[level] };
   }));
   await assertNoError(await supabase.from("mastery").insert(masteryRows));
 
-  console.log(`Seeded ${students.length} students, ${subskills.length} sub-skills, and ${masteryRows.length} mastery records for ${classId}.`);
+  const teacherGroups = groupPlans.map((plan) => ({ id: plan.id, class_id: classId, subskill_id: plan.subskillId, label: `Support: ${plan.objective.split(" ").slice(0, 5).join(" ")}` }));
+  await assertNoError(await supabase.from("teacher_groups").upsert(teacherGroups));
+  const groupMembers = groupPlans.flatMap((plan) => students
+    .filter((student) => masteryLevelsByStudent[student.id][canonicalDemoSubskillIds.indexOf(plan.subskillId)] === "needs_support")
+    .map((student) => ({ teacher_group_id: plan.id, student_id: student.id })));
+  await assertNoError(await supabase.from("teacher_group_members").upsert(groupMembers));
+  await assertNoError(await supabase.from("lesson_plans").upsert(groupPlans.map((plan) => ({
+    id: `${plan.id}-plan`, teacher_group_id: plan.id, prompt_version: "seed-v1", status: "cached",
+    content: { objective: plan.objective, durationMinutes: plan.durationMinutes, materials: plan.materials, practiceItemIds: plan.practiceItemIds, checkForUnderstanding: "Students explain their strategy before sharing an answer." },
+  }))));
+  await assertNoError(await supabase.from("video_recommendations").upsert(groupPlans.map((plan) => ({
+    id: `${plan.subskillId}-video`, subskill_id: plan.subskillId, title: plan.videoTitle, provider: "Rung reviewed resource", url: "#", verification_note: "Placeholder; replace with a manually reviewed video before rehearsal.", is_active: true,
+  }))));
+
+  console.log(`Seeded ${students.length} students, ${subskills.length} sub-skills, ${masteryRows.length} mastery records, and ${teacherGroups.length} cached group plans for ${classId}.`);
 }
 
 seed().catch((error: unknown) => {

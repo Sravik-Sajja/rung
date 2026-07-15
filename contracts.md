@@ -310,13 +310,13 @@ export type GetStudentMasteryResponse = {
 
 ### Current teacher implementation
 
-The current teacher routes conform to the shapes above using temporary in-memory data:
+The current teacher routes query Supabase when server credentials are configured and use the deterministic fixture projection only when that data source is unavailable:
 
-- `GET /api/classes/rivera-fractions/dashboard` returns 10 fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups.
+- `GET /api/classes/fractions-demo-class/dashboard` returns 10 fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups.
 - `GET /api/teacher-groups/:groupId/plan` returns a seeded 15–18 minute plan with matched bank-item IDs and a resource record.
 - A group is created only when at least two students have stored `needs_support` status for the same sub-skill. The UI does not use an AI model to choose mastery levels or group membership.
 
-The handler does not yet attach `AiSource` or `promptVersion` metadata because these plans are local static fallback content. Before persistence, seed the plan in `lesson_plans`, add cache/model metadata, and replace each placeholder video URL with its reviewed URL.
+The handler does not yet attach `AiSource` or `promptVersion` metadata because plans are seeded cached content. Replace each placeholder video URL with its reviewed URL before rehearsal.
 
 ## Routes
 

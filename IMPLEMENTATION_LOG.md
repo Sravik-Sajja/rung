@@ -97,6 +97,26 @@ Use this template for every meaningful change:
 - Known issue, owner, and dependency:
 ```
 
+## 2026-07-14 â€” canonical teacher data and first persisted response path
+
+### Completed
+
+- Extended the canonical seed to the same 10-student, five-sub-skill mastery matrix used by the teacher demo, including cached teacher groups, lesson-plan records, and video placeholders.
+- Exported the roster, sub-skill, group, and practice-item identifiers from `src/lib/demo/contracts.ts`; the in-memory teacher fallback now uses the canonical class, number-line, and common-denominator IDs too.
+- Added `src/lib/teacher/repository.ts`. Teacher dashboard and group-plan API handlers read Supabase first and fall back deterministically when server credentials or seeded rows are unavailable.
+- Added the first persisted student-loop mutation in `src/lib/student/response-service.ts`. `POST /api/responses` now records a response and upserts deterministic mastery when Supabase is configured; local demo scoring remains a clearly bounded fallback.
+
+### Validation
+
+- `npm.cmd test`: 5 files / 16 tests passed.
+- `npx.cmd tsc --noEmit`: passed.
+- `git diff --check`: passed.
+
+### Bugs / follow-ups
+
+- The diagnostic-completion, practice-session/requeue, peer-gate, and student mastery routes remain to be wired to the persisted student-loop service.
+- Seeded video URLs remain explicit placeholders and must be replaced with reviewed resources before the demo rehearsal.
+
 ## 2026-07-14 — parallel-contract plan locked
 
 ### Completed
