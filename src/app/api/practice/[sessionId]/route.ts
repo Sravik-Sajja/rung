@@ -1,11 +1,27 @@
-// Returns a learner's ordered practice cards without answer-bearing solution data.
 import { NextResponse } from "next/server";
-import { getLocalPracticeSession } from "@/lib/student/demo-flow";
+import { requireStudentActor } from "@/lib/auth/actor";
+import { canonicalDemoIds } from "@/lib/demo/contracts";
+import { getDemoPractice } from "@/lib/student/demo-learning-store";
+import { getPersistedPractice } from "@/lib/student/learning-service";
 
 export async function GET(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const studentId = new URL(request.url).searchParams.get("studentId") ?? undefined;
-  const session = getLocalPracticeSession(sessionId, studentId);
-  if (!session) return NextResponse.json({ error: "Unknown practice session" }, { status: 404 });
-  return NextResponse.json(session);
+  const studentId = new URL(request.url).searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
+
+  try {
+    await requireStudentActor(request, studentId);
+    const practice = await getPersistedPractice({ practiceSessionId: sessionId, studentId })
+      ?? getDemoPractice(sessionId, studentId);
+    if (!practice) {
+      return NextResponse.json({ error: "Practice session was not found" }, { status: 404 });
+    }
+
+    const completed = practice.items.filter((item) => item.status === "correct").length;
+    return NextResponse.json({
+      ...practice,
+      progress: { completedItemCount: completed, totalItemCount: practice.items.length },
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load practice" }, { status: 400 });
+  }
 }

@@ -1,7 +1,8 @@
-// Single server-side AI integration boundary. Live model calls are intentionally deferred.
+// Single server-side AI integration boundary.
 import type { HintLevel as LegacyHintLevel } from "@/lib/types";
 import type { RungAiAdapter } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, mayaDiagnosisFallback, tutorHintFallbacks } from "@/lib/ai/fixtures";
+export { createAiAdapter, DEFAULT_AI_MODEL, modelFor, readModelConfig, runtimeAiAdapter } from "@/lib/ai/runtime";
 
 export const fallbackAiAdapter: RungAiAdapter = {
   async diagnoseExplanation(input) {

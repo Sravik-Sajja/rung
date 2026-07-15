@@ -48,6 +48,15 @@ export const canonicalTeacherPracticeItemIds = [
   "subtract-unlike-1",
 ] as const;
 
+/** Fixed order for the five-question fractions diagnostic. */
+export const canonicalDiagnosticItemIds = [
+  "equivalent-1",
+  "number-line-1",
+  "common-denominator-1",
+  "add-unlike-1",
+  "subtract-unlike-1",
+] as const;
+
 export const canonicalTeacherGroupIds = [
   "equivalent-fractions",
   "fraction-number-line",

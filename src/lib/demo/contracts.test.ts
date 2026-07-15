@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalDemoIds,
+  canonicalDiagnosticItemIds,
   canonicalDemoStudents,
   canonicalDemoSubskillIds,
   canonicalTeacherGroupIds,
@@ -31,6 +32,16 @@ describe("partner demo contracts", () => {
   it("keeps every teacher group practice reference inside the seeded item bank", () => {
     expect(canonicalTeacherGroupIds).toEqual(canonicalDemoSubskillIds);
     expect(canonicalTeacherPracticeItemIds).toEqual([
+      "equivalent-1",
+      "number-line-1",
+      "common-denominator-1",
+      "add-unlike-1",
+      "subtract-unlike-1",
+    ]);
+  });
+
+  it("locks the five diagnostic items and their stable order", () => {
+    expect(canonicalDiagnosticItemIds).toEqual([
       "equivalent-1",
       "number-line-1",
       "common-denominator-1",

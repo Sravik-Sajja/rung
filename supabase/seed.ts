@@ -4,6 +4,7 @@ import {
   canonicalDemoIds,
   canonicalDemoStudents,
   canonicalDemoSubskillIds,
+  canonicalDiagnosticItemIds,
   canonicalTeacherGroupIds,
   canonicalTeacherPracticeItemIds,
   masteryLevels,
@@ -40,9 +41,10 @@ const items = [
   { id: "equivalent-1", subskill_id: "equivalent-fractions", item_type: "practice", prompt: "Write a fraction equivalent to 1/2 with denominator 8.", answer_spec: { accepted: ["4/8"] }, solution_steps: ["Multiply the numerator and denominator by the same number."], difficulty: 1, is_active: true, distractor_map: { "1/8": "changes_denominator_only" } },
   { id: "number-line-1", subskill_id: "fraction-number-line", item_type: "practice", prompt: "Which point is 3/4 of the way from 0 to 1?", answer_spec: { accepted: ["3/4"] }, solution_steps: ["Split the line into four equal parts and count three parts from zero."], difficulty: 1, is_active: true, distractor_map: { "1/3": "reverses_numerator_and_denominator" } },
   { id: "common-denominator-1", subskill_id: commonDenominatorSubskillId, item_type: "practice", prompt: "What common denominator can you use for 1/3 and 1/4?", answer_spec: { accepted: ["12"] }, solution_steps: ["Use a number both 3 and 4 divide into evenly."], difficulty: 1, is_active: true, distractor_map: { "7": "adds_denominators" } },
+  { id: "common-denominator-2", subskill_id: commonDenominatorSubskillId, item_type: "practice", prompt: "What common denominator can you use for 2/5 and 1/3?", answer_spec: { accepted: ["15"] }, solution_steps: ["Use a number both 5 and 3 divide into evenly."], difficulty: 2, is_active: true, distractor_map: { "8": "adds_denominators" } },
   { id: "add-unlike-1", subskill_id: "add-unlike-denominators", item_type: "practice", prompt: "What is 1/3 + 1/4?", answer_spec: { accepted: ["7/12"] }, solution_steps: ["Find a common denominator of 12.", "Rewrite the fractions as twelfths, then add."], difficulty: 1, is_active: true, distractor_map: { "2/7": "adds_numerators_and_denominators" } },
+  { id: "add-unlike-2", subskill_id: "add-unlike-denominators", item_type: "practice", prompt: "What is 2/5 + 1/3?", answer_spec: { accepted: ["11/15"] }, solution_steps: ["Find a common denominator of 15.", "Rewrite the fractions as fifteenths, then add."], difficulty: 2, is_active: true, distractor_map: { "3/8": "adds_numerators_and_denominators" } },
   { id: "subtract-unlike-1", subskill_id: "subtract-unlike-denominators", item_type: "practice", prompt: "What is 3/4 - 1/3?", answer_spec: { accepted: ["5/12"] }, solution_steps: ["Rewrite both fractions in twelfths before subtracting."], difficulty: 1, is_active: true, distractor_map: { "2/1": "subtracts_numerators_and_denominators" } },
-  { id: "diagnostic-add-unlike-1", subskill_id: "add-unlike-denominators", item_type: "diagnostic", prompt: "What is 1/3 + 1/4?", answer_spec: { accepted: ["7/12"] }, solution_steps: ["Find a common denominator of 12.", "Rewrite 1/3 as 4/12 and 1/4 as 3/12.", "Add 4/12 and 3/12."], difficulty: 1, is_active: true, distractor_map: { "2/7": "adds_numerators_and_denominators" } },
 ] as const;
 
 const levelSummary: Record<typeof masteryLevels[number], string> = {
@@ -88,7 +90,7 @@ async function seed() {
   await assertNoError(await supabase.from("items").upsert(items));
   await assertNoError(await supabase.from("assignments").upsert({ id: diagnosticAssignmentId, class_id: classId, topic_id: fractionsTopicId, title: "Fractions check-in", mode: "diagnostic" }));
   await assertNoError(await supabase.from("assignment_items").delete().eq("assignment_id", diagnosticAssignmentId));
-  await assertNoError(await supabase.from("assignment_items").upsert([{ assignment_id: diagnosticAssignmentId, item_id: "diagnostic-add-unlike-1", position: 1 }]));
+  await assertNoError(await supabase.from("assignment_items").upsert(canonicalDiagnosticItemIds.map((itemId, index) => ({ assignment_id: diagnosticAssignmentId, item_id: itemId, position: index + 1 }))));
 
   const studentIds = students.map((student) => student.id);
   const groups = await assertNoError(await supabase.from("teacher_groups").select("id").eq("class_id", classId));

@@ -1,13 +1,18 @@
-export type MasteryLevel = "not_started" | "needs_support" | "developing" | "mastered";
+// Thin wrapper around the shared Badge primitive so every mastery level renders a semantic
+// tone plus its own text label — color is never the only signal.
+import { Badge } from "@/components/ui";
+import type { MasteryLevel } from "@/lib/types";
 
-const copy: Record<MasteryLevel, { label: string; className: string }> = {
-  not_started: { label: "Not started", className: "bg-slate-100 text-slate-700" },
-  needs_support: { label: "Needs support", className: "bg-amber-100 text-amber-900" },
-  developing: { label: "Developing", className: "bg-sky-100 text-sky-900" },
-  mastered: { label: "Mastered", className: "bg-emerald-100 text-emerald-900" },
+export type { MasteryLevel };
+
+const copy: Record<MasteryLevel, { label: string; tone: "none" | "support" | "developing" | "mastered" }> = {
+  not_started: { label: "Not started", tone: "none" },
+  needs_support: { label: "Needs support", tone: "support" },
+  developing: { label: "Developing", tone: "developing" },
+  mastered: { label: "Mastered", tone: "mastered" },
 };
 
 export function MasteryBadge({ level }: { level: MasteryLevel }) {
   const status = copy[level];
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${status.className}`}>{status.label}</span>;
+  return <Badge tone={status.tone}>{status.label}</Badge>;
 }

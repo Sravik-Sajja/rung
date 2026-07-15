@@ -1,6 +1,6 @@
 # Rung MVP Architecture
 
-**Status:** Source of truth for the hackathon build  
+**Status:** Source of truth for the deployable post-hackathon MVP
 **Last updated:** 2026-07-14  
 **Delivery target:** 2026-07-21  
 **Team:** 2 builders
@@ -19,8 +19,9 @@ This document is the technical and product boundary for the build. When implemen
 | Subject | Math |
 | Beachhead | Fractions and rational-number operations |
 | Demo narrative | Student experience first, teacher payoff second |
-| Product scope | Hackathon prototype; seeded classroom and seeded content |
-| Authentication | Out of scope. Role and student identity are selected from demo data. |
+| Product scope | Deployable post-hackathon MVP; seeded classroom/content remains the canonical demo tenant |
+| Deployment | Next.js on Vercel; Supabase Postgres + Auth; OpenAI API called only from server-side adapter |
+| Authentication | Supabase Auth and RLS are required for production. `DEMO_MODE` is a separately gated rehearsal path, never a substitute for production authorization. |
 | Core stack | Next.js + TypeScript, Supabase (Postgres), OpenAI API |
 | Team / schedule | Two builders; ship by July 21, 2026 |
 
@@ -33,13 +34,13 @@ These are intentional implementation choices for this MVP. A builder should not 
 | UI styling | Tailwind CSS |
 | Shared UI components | Small local component set; do not introduce a component library unless it accelerates a specific screen |
 | Heatmap | Accessible custom CSS grid; avoid a charting dependency for this narrow matrix |
-| Supabase client | `@supabase/supabase-js`, instantiated only in server-side modules for privileged data access |
+| Supabase client | Production browser client uses the anon key and authenticated session only; server modules use the user session for normal requests and the service role only for seed/admin work |
 | OpenAI client | Official OpenAI JavaScript/TypeScript SDK, called only by the server-side AI adapter |
 | Runtime validation | Zod schemas shared between API handlers and client form boundaries |
 | Unit/integration test runner | Vitest |
 | Browser end-to-end testing | Optional Playwright smoke test only after the core flow is complete |
 | Database change management | Supabase migrations plus a repeatable local/demo seed script |
-| Demo reset | A documented seed/reset command; a dev-only reset endpoint is permitted if it makes rehearsal safer |
+| Demo reset | Repeatable CLI seed/reset command; no production reset endpoint. A non-production endpoint is permitted only when environment-gated and separately authorized. |
 
 ## 3. MVP contract
 
@@ -61,7 +62,7 @@ The MVP must make this claim credibly:
 
 ### Explicitly out of scope
 
-- Real authentication, rostering, LMS integration, or parent accounts.
+- Rostering, LMS integration, parent accounts, and enterprise SSO beyond Supabase Auth.
 - Multiple subjects, grade bands, units, or a general curriculum authoring system.
 - Live internet/video search, transcript ingestion, or real-time recommendation crawling.
 - Full spaced-repetition scheduling across days or weeks.
@@ -77,8 +78,8 @@ The journey maps to a <3-minute script with the timing budget and AI-narration h
 
 | Beat | Time | On screen | Narration hook |
 | --- | --- | --- | --- |
-| 1. Select the seeded student **Maya Chen** from the demo roster; Maya completes a 4–5 question fractions diagnostic. | ~40s | Diagnostic, one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
-| 2. The system reports a specific finding: *Maya adds fractions without first finding a common denominator* — inferred from **which** wrong answers she chose, not just that she missed them. | (in ~40s) | Diagnosis screen | GPT-5.6 reads the `distractor_map` misconception tags to name the specific gap (§8) |
+| 1. Select the seeded student **Maya Chen** from the demo roster; Maya completes a five-question fixed fractions diagnostic. | ~40s | Diagnostic, one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
+| 2. The system reports a specific finding: *Maya adds fractions without first finding a common denominator* — inferred from **which** wrong answers she chose, not just that she missed them. | (in ~40s) | Diagnosis screen | Deterministic rules select the supported tag; GPT-5.6 renders it in student-friendly language (§8) |
 | 3. Maya receives practice for the prerequisite and uses the tutor's nudge → hint → guided-step ladder on a hard item without being handed the answer. | ~40s | Practice + hint ladder | GPT-5.6 generates Socratic laddered hints; leak check keeps the answer hidden |
 | 4. Maya submits a meaningful attempt. The peer approach unlocks; the complete worked solution stays locked until Maya solves the item correctly. | ~30s | Attempt gate → peer approach | GPT-5.6 verifies the attempt is genuine and on-topic before unlocking |
 | 5. Switch to the teacher dashboard: the heatmap shows several students share the common-denominator gap; select that group; Rung shows a 15–20 minute next-day mini-lesson with a matched practice set and one verified video. | ~45s | Teacher heatmap → group → plan | GPT-5.6 drafted the grouped mini-lesson; the video was pre-vetted by GPT-5.6 (§7); Codex built the dashboard and grouping |
@@ -92,7 +93,7 @@ flowchart LR
   S["Student UI"] --> N["Next.js application"]
   T["Teacher UI"] --> N
   N --> R["Route handlers / server actions"]
-  R --> DB[("Supabase Postgres")]
+  R --> DB[("Supabase Postgres + Auth/RLS")]
   R --> M["OpenAI service adapter"]
   M --> O["OpenAI API"]
   R --> V["Math & policy validators"]
@@ -123,7 +124,7 @@ The MVP may use the Next.js App Router with server components for read-heavy das
 
 Responsibilities:
 
-- Enforce the demo role and selected student context.
+- Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In `DEMO_MODE`, resolve an isolated, allow-listed demo identity rather than accepting arbitrary client IDs.
 - Coordinate scoring, mastery updates, unlock decisions, and model calls.
 - Validate request shape and return stable, typed responses.
 - Log model request metadata and failures without storing secrets.
@@ -132,9 +133,9 @@ All mutation and model workflows cross this boundary. Browser code must not deci
 
 ### Data: Supabase Postgres
 
-Supabase is the canonical store for curriculum, demo users, attempts, mastery, groups, cached model outputs, peer examples, and video recommendations. The initial build should use migrations and a repeatable seed script so the entire demo can be recreated.
+Supabase is the canonical store for curriculum, users, attempts, mastery, groups, cached model outputs, peer examples, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
 
-Supabase Auth and Row Level Security are not required for this prototype because there are no real accounts. The database must still be accessed only from server-side code using environment-provided credentials. Before any real-user release, add authentication, RLS policies, consent/retention design, and a FERPA/COPPA review.
+Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` is disabled in production and may only select pre-seeded, fictional allow-listed identities. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
 
 ### AI integration: OpenAI service adapter
 
@@ -142,7 +143,7 @@ One server-side module owns all OpenAI requests. It receives structured inputs a
 
 The adapter is responsible for:
 
-- Model selection and API request construction.
+- Model selection and API request construction: GPT-5.6 Luna for routine tutor, attempt-verification, and item-wrap calls; GPT-5.6 Terra for lower-volume diagnosis explanations and teacher lesson-plan drafts. Exact approved model IDs are environment-configured and allow-listed.
 - Versioned prompt templates.
 - Structured output parsing and schema validation.
 - Timeouts, error handling, and a cached/seeded fallback for the demo.
@@ -150,9 +151,9 @@ The adapter is responsible for:
 
 Use the currently approved OpenAI model configured by an environment variable rather than hard-coding a model name. This keeps the architecture stable if the hackathon model changes.
 
-### Cache policy
+### Cache and fallback policy
 
-Demo-critical AI results are seeded or cached before rehearsal. The application may make a live request when one is available, but the user-visible result must fall back immediately to the cached version on timeout, API failure, schema failure, or safety rejection.
+Option B is required: **live model call -> verified cache -> safe deterministic fallback**. The adapter calls the configured GPT-5.6 model first, validates the structured result and policy checks, then stores it as a verified cache entry. On timeout, API failure, invalid schema, or unsafe output, it uses only a matching verified cache entry; if none exists, it returns a feature-specific safe fallback. Tutor returns a non-answer-revealing deterministic hint; diagnosis returns a seeded explanation of deterministic evidence; lesson planning returns a seeded plan; peer verification returns `uncertain` and does not unlock. The UI may identify the response source but must not present a failed live call as model-generated.
 
 Cache AI outputs by `feature`, the relevant stable entity (such as `item_id` or `teacher_group_id`), and `prompt_version`. Never use a cache entry created for a different item, sub-skill, or learner context. Attempt verification, whose input includes free-typed text, is additionally keyed by the normalized attempt text (see §9.3 demo reliability).
 
@@ -178,6 +179,7 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | Table | Purpose | Key fields |
 | --- | --- | --- |
 | `students` | Seeded learner identities | `id`, `display_name`, `grade_band`, `is_demo_default` |
+| `profiles` | Application identity linked to Supabase Auth | `id` (= `auth.users.id`), `role`, `student_id?`, `teacher_id?`, `demo_identity` |
 | `classes` | Seeded demo classroom | `id`, `name`, `teacher_display_name` |
 | `class_enrollments` | Student/class membership | `class_id`, `student_id` |
 | `topics` | Top-level instructional unit | `id`, `slug`, `name` |
@@ -193,16 +195,18 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `peer_solutions` | Curated, seeded worked examples | `id`, `item_id`, `author_alias`, `approach_text`, `full_solution`, `is_vetted` |
 | `peer_unlocks` | Explicit gate state | `student_id`, `item_id`, `approach_unlocked_at`, `full_solution_unlocked_at` |
 | `video_recommendations` | Pre-verified instructional videos | `id`, `subskill_id`, `title`, `provider`, `url`, `verification_note`, `is_active` |
-| `teacher_groups` | Materialized groups for the demo class | `id`, `class_id`, `subskill_id`, `label`, `generated_at` |
-| `teacher_group_members` | Group membership | `teacher_group_id`, `student_id` |
-| `lesson_plans` | Cached/generated tomorrow plan | `id`, `teacher_group_id`, `content`, `prompt_version`, `status`, `generated_at` |
-| `ai_runs` | Auditable model-call metadata | `id`, `feature`, `input_hash`, `prompt_version`, `model`, `status`, `latency_ms`, `output_json`, `created_at` |
+| `teacher_groups` | Computed current grouping projection; optionally persisted for a selected plan | `id`, `class_id`, `subskill_id`, `label`, `generated_at` |
+| `teacher_group_members` | Membership captured when a teacher selects/persists a group plan | `teacher_group_id`, `student_id` |
+| `lesson_plans` | Cached/generated dated plan snapshot for a selected group | `id`, `teacher_group_id`, `content`, `prompt_version`, `status`, `generated_at` |
+| `ai_runs` | Auditable model-call metadata; no raw attempt text | `id`, `feature`, `input_hash`, `prompt_version`, `model`, `status`, `latency_ms`, `output_json`, `created_at` |
 
 `answer_spec` must be a structured JSON value such as a normalized fraction, accepted equivalent values, and validation method. It must not rely only on prose in the item prompt.
 
 **Resurfacing storage note.** `practice_session_items` must support an item appearing at its original position and once later as a requeued occurrence. Use a row ID or explicit occurrence key rather than relying only on a `(practice_session_id, item_id)` uniqueness constraint.
 
 `distractor_map` is the mechanism behind the product's core claim: diagnosis reads the *error pattern in wrong answers*, not just right/wrong. It maps each seeded wrong answer choice (or a recognizable wrong-answer form for free-entry items) to a predefined misconception tag — for example, `"3/7" → adds_numerators_and_denominators`. Diagnostic items must seed distractors whose selection is diagnostic, so that *which* wrong answer a student picks names the misconception. Misconception tags are drawn from a small fixed vocabulary aligned to the sub-skills in §7.
+
+**Attempt retention.** `attempt_submissions.attempt_text` is retained for 30 days from submission, then deleted or irreversibly redacted by a scheduled server-side job. `ai_runs` stores an input hash and structured status/metadata, never raw student attempt text. Application logs must not include raw attempts.
 
 ### Schema delivery priority
 
@@ -217,7 +221,7 @@ The schema above describes the desired canonical model. The following tables are
 
 `ai_runs` is required from day one: the AI adapter records run metadata on every call (§6 AI integration), and the prompting requirements in §10 mandate an `ai_runs` record for every request. It is a single migration and must not be deferred; deferring it would leave §6, §7, and §10 without the logging sink they assume.
 
-`teacher_groups`, `teacher_group_members`, and `lesson_plans` should be added when their corresponding teacher feature is built. They must not delay the student diagnostic, practice, and peer-gate journey. If time is constrained, group membership may be calculated from `mastery` for the dashboard and then persisted later; the user-visible group must remain stable during a demo run.
+The dashboard computes group membership from current `mastery` on every read. When a teacher selects a group for planning, persist the membership and generated plan as a dated snapshot. The dashboard remains current while the selected plan stays stable and auditable.
 
 ## 8. Mastery and diagnostic rules
 
@@ -234,22 +238,24 @@ The hackathon needs explainable mastery, not a sophisticated but opaque learner 
 
 These thresholds are product-demo rules, not a claim of validated educational measurement. Make that distinction in presentation copy and code comments.
 
+**Stability rule.** One later incorrect response never automatically downgrades `mastered`. Store it as new evidence and surface it for later review/recalibration; only an explicitly defined multi-evidence recalibration process may change a mastered level.
+
 ### Diagnostic algorithm
 
 1. Score each response deterministically with the item's `answer_spec`.
 2. Map missed items to their declared sub-skills, and map each wrong answer to its misconception tag via the item's `distractor_map`.
 3. Select the highest-priority gap: missing prerequisite first; otherwise the most frequently missed target sub-skill.
-4. The AI diagnosis reads the collected misconception tags and error pattern to (a) name the specific misconception it best explains and (b) render it in student-friendly language. This is the spec's headline reasoning task, not decoration — it consumes the `distractor_map` tags, not just the right/wrong vector.
-5. Store the deterministic evidence (scores, sub-skill map, misconception tags) and the AI explanation separately. The tags are the auditable ground truth; the AI narrative may not introduce a misconception not supported by a seeded tag.
+4. Deterministically select one supported misconception tag from the evidence using the prerequisite-first rule. GPT-5.6 may render that already-selected diagnosis in student-friendly language, but it cannot select or introduce a tag.
+5. Store the deterministic evidence (scores, sub-skill map, selected tag) and the AI explanation separately. The deterministic selection is auditable ground truth.
 
 For the main demo student, the selected diagnosis must be stable: **finds no common denominator before adding fractions**. Seed answer choices and diagnostic mappings that reliably demonstrate this error.
 
 ### Practice selection algorithm
 
 1. Identify the selected weak sub-skill and any direct unmet prerequisite.
-2. Select 3–4 validated active items for that skill, beginning with the prerequisite where applicable.
+2. Select exactly four validated active items from the frozen bank for that skill, beginning with the prerequisite where applicable.
 3. Order from concrete/scaffolded to target-level difficulty.
-4. Items come from the generation pipeline in §8.1, not a hand-typed bank. The demo replays a **frozen, pre-generated set** so the live moment is deterministic; the product may generate on demand because every item passes the validator before it is shown.
+4. Items come from the generation pipeline in §8.1, not a hand-typed bank. Selection is deterministic from the frozen, validated bank; required learner practice is never generated at runtime.
 
 ### 8.1 Item generation pipeline
 
@@ -306,7 +312,7 @@ The tutor never accepts the model's assessment of mathematical correctness. Stud
 1. Student submits an attempt and a short “What did you try?” explanation.
 2. Server rejects empty, repeated-character, obviously unrelated, or too-short attempts deterministically.
 3. The AI verifier receives the item, answer, and explanation and returns structured fields: `on_topic`, `non_trivial`, `reason`, `confidence`.
-4. Server unlocks the peer **approach** only if deterministic checks pass and both model booleans are true.
+4. Server unlocks the peer **approach** only if the deterministic minimum floor passes and the verified live/cache model result has both booleans true. A live failure without a matching verified cache is `uncertain` and fails closed; it never unlocks.
 5. Server unlocks the full worked solution only after deterministic answer scoring is correct.
 6. Any verifier failure returns a constructive retry prompt, never a judgment of student motivation.
 
@@ -369,7 +375,7 @@ The exact adapter methods, result/fallback objects, cache behavior, and `ai_runs
 
 | Failure | User-visible behavior |
 | --- | --- |
-| OpenAI timeout/error | Show an item-specific seeded hint, cached diagnosis, or cached plan; log the failure |
+| OpenAI timeout/error | Use a matching verified cache; if absent, use the feature-safe fallback and log the failure. Peer verification is `uncertain` and remains locked. |
 | Output schema invalid | Discard it and use the same safe fallback |
 | Suspected answer leakage | Do not show output; display a lower-level safe hint or “Try identifying the denominators first.” |
 | Attempt check uncertain | Ask student for a specific next step or explanation; do not unlock |
@@ -381,16 +387,16 @@ Exact routing may evolve, but server operations must have these contracts.
 
 | Operation | Request | Response |
 | --- | --- | --- |
-| `POST /api/responses` | `studentId`, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
-| `POST /api/diagnostics/:assignmentId/complete` | `studentId` | diagnosis, mastery snapshot, practice session ID |
-| `GET /api/practice/:sessionId` | none | ordered practice item cards, excluding answers |
-| `POST /api/tutor/hint` | `studentId`, `itemId`, `attempt`, `level` | safe hint, source (`ai` or `fallback`) |
-| `POST /api/peer-attempts` | `studentId`, `itemId`, `attemptText`, `explanation` | verification status, approach unlock state, retry message |
-| `GET /api/peer-solutions/:itemId` | `studentId` | only content permitted by `peer_unlocks` |
-| `GET /api/classes/:classId/dashboard` | none | heatmap cells, stable groups, selected group summary |
-| `GET /api/teacher-groups/:groupId/plan` | none | cached/generated plan and matching video |
+| `POST /api/responses` | authenticated actor, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
+| `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, practice session ID |
+| `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
+| `POST /api/tutor/hint` | authenticated student, `itemId`, `attempt`, `level` | safe hint, source (`ai`, `cache`, or `fallback`) |
+| `POST /api/peer-attempts` | authenticated student, `itemId`, `attemptText`, `explanation` | verification status, approach unlock state, retry message |
+| `GET /api/peer-solutions/:itemId` | authenticated student | only content permitted by `peer_unlocks` |
+| `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
+| `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
 
-All request bodies are validated with shared schemas. IDs are checked against the seeded demo data; do not trust a client-provided student or class ID merely because login is out of scope.
+All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and may resolve only allow-listed fictional demo identities.
 
 ### 11.1 Shared API contract
 
@@ -400,7 +406,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 
 ### Student routes
 
-- `/demo` — role/student selector and “start Maya’s journey.”
+- `/demo` — non-production, environment-gated selector for allow-listed fictional demo identities only.
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
 - `/student/diagnosis` — exact gap, evidence-oriented plain language, “start practice.”
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, peer approach gate, progress.
@@ -441,8 +447,8 @@ It must include:
 - Maya as the primary walkthrough student.
 - At least three students with the common-denominator gap, so the teacher group is convincing.
 - At least one student in each visible mastery state to make the heatmap legible.
-- 4–5 diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
-- 3–4 practice items for each possible demonstrated target skill.
+- Exactly five fixed, ordered diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
+- At least four frozen, validated practice items for each possible demonstrated target skill.
 - 3–4 reviewed peer approaches for the primary practice item.
 - One video per featured sub-skill with provider, title, URL, and verification note.
 - One 15–20 minute plan for the common-denominator teacher group.
@@ -457,11 +463,11 @@ Diagnostic and practice items are produced by the §8.1 generation pipeline (par
 - Keep OpenAI and Supabase service keys in `.env.local`; commit only `.env.example` with variable names.
 - Never expose service-role keys or OpenAI keys to the browser.
 - Do not persist raw chain-of-thought or ask models to provide it.
-- Store only the minimum attempt text needed for the demo; do not log raw student inputs in console output.
+- Retain raw attempt text only in `attempt_submissions` for 30 days; do not log raw student inputs in console output or `ai_runs`.
 - For photo help (§9.5): store the minimum image, strip it after the session, never log it, and use only fictional handwritten work.
 - Pre-cache all demo-critical diagnosis, tutor, attempt-verification, lesson-plan, item-generation, and photo-reading outputs.
 - Include loading, retry, and fallback states for each AI-dependent interaction.
-- Provide a documented command to reset the database to the canonical seed state before every rehearsal or recording.
+- Provide a documented CLI command to reset the database to the canonical seed state before every rehearsal or recording. Do not expose a production reset endpoint.
 - Use a clear prototype notice: not for grading, not a substitute for teacher judgment.
 
 ## 16. Testing strategy
@@ -477,6 +483,7 @@ Prioritize tests for trust boundaries over visual polish.
 - Practice selection respects skill order and yields only validated items.
 - The parametric core computes the correct answer and misconception distractors for a template, and the §8.1 validator rejects an LLM-wrapped item whose answer, operation, or sub-skill drifted from the parametric skeleton.
 - A missed practice item is re-queued once within the session before completion.
+- One incorrect response after `mastered` does not automatically downgrade mastery.
 - Peer approach cannot unlock without a verified attempt.
 - Full peer solution cannot unlock without a correct answer.
 - Tutor leakage checker rejects known final answers and solution-step strings.
@@ -552,12 +559,11 @@ The MVP is ready when all statements below are true:
 
 These are intentionally not decided for the hackathon MVP. Do not introduce them implicitly in the implementation.
 
-- Authentication provider, role permissions, and multi-tenant school data model.
 - Real teacher authoring, assignment configuration, and curriculum import.
 - A validated mastery model and research/evaluation protocol.
 - Automated video ingestion and ongoing content review process.
 - Production moderation for user-generated peer content.
-- Data retention, deletion, consent, privacy, and compliance controls required for minors.
+- Full deletion, consent, privacy, and compliance controls required for minors beyond the 30-day attempt-retention boundary.
 - Pricing, district procurement, and LMS integrations.
 
 When Rung moves beyond a prototype, these decisions require dedicated design and review rather than incremental feature work.

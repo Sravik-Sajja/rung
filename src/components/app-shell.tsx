@@ -1,6 +1,51 @@
-// Minimal shared page frame with Rung branding and the prototype notice.
+// Shared page frame: Rung wordmark, student/teacher switch, and the prototype notice. Theme-aware via tokens.
 import Link from "next/link";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto min-h-screen max-w-4xl p-6"><header className="mb-8 flex items-center justify-between"><Link href="/demo" className="text-xl font-bold">Rung</Link><span className="text-sm text-slate-500">Prototype · not for grading</span></header>{children}</main>;
+export function AppShell({
+  children,
+  active
+}: {
+  children: React.ReactNode;
+  active?: "student" | "teacher";
+}) {
+  return (
+    <div className="min-h-screen bg-bg text-ink">
+      <header className="sticky top-0 z-20 border-b border-border bg-surface shadow-sm">
+        <div className="mx-auto flex max-w-content items-center justify-between px-6 py-3.5">
+          <Link href="/demo" className="flex items-baseline gap-2">
+            <span className="text-lg font-extrabold tracking-tight text-ink">Rung</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-ink-faint">
+              differentiated math
+            </span>
+          </Link>
+          <nav className="flex items-center gap-1 text-sm">
+            <Link
+              href="/student/diagnostic"
+              className={`rounded-md px-3 py-1.5 transition-colors ${
+                active === "student" ? "bg-accent-soft font-medium text-accent" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Student
+            </Link>
+            <Link
+              href="/teacher/dashboard"
+              className={`rounded-md px-3 py-1.5 transition-colors ${
+                active === "teacher" ? "bg-accent-soft font-medium text-accent" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Teacher
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-content px-6 py-10">{children}</main>
+
+      <footer className="mx-auto max-w-content px-6 pb-10">
+        <p className="font-mono text-xs text-ink-faint">
+          Prototype · not for grading · not a substitute for teacher judgment
+        </p>
+      </footer>
+    </div>
+  );
 }

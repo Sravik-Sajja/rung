@@ -48,7 +48,9 @@ export const demoItems: Item[] = [
   { id: "equivalent-1", subskillId: "equivalent-fractions", prompt: "Write a fraction equivalent to 1/2 with denominator 8.", answerSpec: { accepted: ["4/8"] }, distractorMap: { "1/8": "changes_denominator_only" } },
   { id: "number-line-1", subskillId: canonicalDemoSubskillIds[1], prompt: "Which point is 3/4 of the way from 0 to 1?", answerSpec: { accepted: ["3/4"] }, distractorMap: { "1/3": "reverses_numerator_and_denominator" } },
   { id: "common-denominator-1", subskillId: canonicalDemoSubskillIds[2], prompt: "What common denominator can you use for 1/3 and 1/4?", answerSpec: { accepted: ["12"] }, distractorMap: { "7": "adds_denominators" } },
+  { id: "common-denominator-2", subskillId: canonicalDemoSubskillIds[2], prompt: "What common denominator can you use for 2/5 and 1/3?", answerSpec: { accepted: ["15"] }, distractorMap: { "8": "adds_denominators" } },
   { id: "add-unlike-1", subskillId: "add-unlike-denominators", prompt: "What is 1/3 + 1/4?", answerSpec: { accepted: ["7/12"] }, distractorMap: { "2/7": "adds_numerators_and_denominators" } },
+  { id: "add-unlike-2", subskillId: "add-unlike-denominators", prompt: "What is 2/5 + 1/3?", answerSpec: { accepted: ["11/15"] }, distractorMap: { "3/8": "adds_numerators_and_denominators" } },
   { id: "subtract-unlike-1", subskillId: "subtract-unlike-denominators", prompt: "What is 3/4 − 1/3?", answerSpec: { accepted: ["5/12"] }, distractorMap: { "2/1": "subtracts_numerators_and_denominators" } }
 ];
 

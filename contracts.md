@@ -1,6 +1,6 @@
 # Rung Shared Contracts
 
-**Status:** Phase-0 implementation contract  
+**Status:** Deployable MVP implementation contract
 **Companion document:** [architecture.md](./architecture.md)
 
 This document defines the interfaces shared by the Domain/API, AI, and Student UI tracks. It is intentionally implementation-adjacent: the corresponding Zod schemas, inferred TypeScript types, fixtures, and route handlers must conform to these contracts.
@@ -15,11 +15,35 @@ This document defines the interfaces shared by the Domain/API, AI, and Student U
 
 Track C consumes only these DTOs and fixtures. It must not invent alternative shapes. Track A calls the AI adapter interface; it must not call OpenAI directly.
 
+## Authentication and authorization boundary
+
+Production requests resolve the actor from the Supabase Auth session; they do not trust a client-supplied identity. Route handlers must load the linked `profiles` record and enforce role and class membership before reading or mutating data. Supabase RLS is the database backstop for the same policy.
+
+```ts
+export type Actor =
+  | { userId: string; role: "student"; studentId: string }
+  | { userId: string; role: "teacher"; teacherId: string };
+```
+
+- A student request carrying `studentId` is valid only when it equals `Actor.studentId`; new production clients should omit it where the route can derive it.
+- Teachers may access only classes they teach and plans/snapshots created for those classes.
+- The Supabase service role is never used in browser code and is not a substitute for a user session in normal routes.
+- `DEMO_MODE` is disabled in production. In non-production it may resolve only an allow-listed, fictional seed identity; it must produce the same `Actor` shape and authorization checks as production.
+
 ## AI adapter
 
 ```ts
 export type AiSource = "ai" | "cache" | "fallback";
 export type HintLevel = "nudge" | "hint" | "guided_step";
+export type AiFeature =
+  | "diagnosis_explanation"
+  | "tutor_hint"
+  | "attempt_verification"
+  | "item_wrap"
+  | "lesson_plan";
+
+/** Environment-configured, allow-listed production model routes. */
+export type AiModelRoute = "gpt-5.6-luna" | "gpt-5.6-terra";
 
 export type AnswerSpec = {
   validation: "rational_equivalence";
@@ -57,6 +81,8 @@ export type AiResultMeta = {
   source: AiSource;
   promptVersion: string;
   aiRunId: string;
+  /** The configured approved model for an AI/cache result; `fallback` when no model response is used. */
+  model: AiModelRoute | "fallback";
 };
 
 export type DiagnosisExplanation = AiResultMeta & {
@@ -119,11 +145,22 @@ export interface RungAiAdapter {
 }
 ```
 
+Model routing is fixed by feature: Luna handles `tutorHint`, `verifyAttempt`, and `wrapItem`; Terra handles `diagnoseExplanation` and teacher lesson-plan generation. The exact deployment identifiers are configured by environment and must be validated against this allow-list at startup. No UI route chooses a model.
+
 The adapter may not alter a deterministic score, mastery decision, or peer-unlock decision. The domain layer rejects diagnosis tags not in `supportedMisconceptionTags`, applies deterministic attempt checks, and maps verifier output to `verified`, `retry`, or `uncertain`.
 
 `SafeItem` deliberately excludes answer-bearing fields. The server performs answer-leak checks only after a tutor result returns.
 
-### Fallback contract
+### Live/cache/fallback contract
+
+Every adapter call follows this sequence:
+
+1. Make a live request to the routed GPT-5.6 model.
+2. Validate its structured output and safety policy; only then store/use it as a verified cache entry.
+3. On timeout, provider error, invalid schema, or policy rejection, use only a cache entry matching the feature, stable entity/context, normalized attempt text when applicable, and prompt version.
+4. If no matching verified cache exists, return the typed safe fallback.
+
+For peer verification, the fallback is always `onTopic: false`, `nonTrivial: false` with a domain-mapped `uncertain` status. It must never unlock an approach. Diagnosis fallback may explain only the deterministically selected tag; tutor fallback must be non-answer-revealing; teacher-plan fallback is a seeded plan snapshot.
 
 Phase 0 must seed and export typed fallback objects under the same schemas:
 
@@ -132,7 +169,7 @@ Phase 0 must seed and export typed fallback objects under the same schemas:
 - `mayaAttemptVerificationFallback`
 - `itemWrapFallbacksByItemId`
 
-Every adapter invocation—AI, cache, fallback, or safety rejection—creates an `ai_runs` record and returns that `aiRunId`. Adapter implementations may change, but their inputs and outputs may not change without revising this document.
+Every adapter invocation—AI, cache, fallback, or safety rejection—creates an `ai_runs` record and returns that `aiRunId`. The record contains an input hash and metadata only; it must never contain raw attempt text. Adapter implementations may change, but their inputs and outputs may not change without revising this document.
 
 ### Item-wrap invariant
 
@@ -278,11 +315,19 @@ export type ClassDashboardResponse = {
   students: Array<{ id: string; displayName: string; gradeBand: string }>;
   subskills: Array<{ id: string; name: string }>;
   cells: HeatmapCell[];
+  /** Computed from current mastery on each dashboard read. */
   groups: Array<{ id: string; subskillId: string; label: string; studentIds: string[] }>;
 };
 
 export type TeacherGroupPlanResponse = {
-  group: { id: string; subskillId: string; label: string; studentIds: string[] };
+  /** Persisted membership at selection time; it does not change if the dashboard later recomputes. */
+  group: {
+    id: string;
+    subskillId: string;
+    label: string;
+    studentIds: string[];
+    snapshotCreatedAt: string;
+  };
   plan: {
     groupId: string;
     objective: string;
@@ -308,12 +353,12 @@ export type GetStudentMasteryResponse = {
 };
 ```
 
-### Current teacher implementation
+### Target production teacher behavior
 
-The current teacher routes query Supabase when server credentials are configured and use the deterministic fixture projection only when that data source is unavailable:
+After the Auth/RLS route rollout, production teacher routes query Supabase through an authenticated teacher session and RLS-compatible class-membership checks. Deterministic fixture projections are available only to the isolated non-production demo flow. The current route handlers still need that session extraction and actor validation wired before this becomes enforced behavior.
 
 - `GET /api/classes/fractions-demo-class/dashboard` returns the canonical eight fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups. Maya, Diego, and Zara form the `find-common-denominator` needs-support cohort.
-- `GET /api/teacher-groups/:groupId/plan` returns a seeded 15–18 minute plan with matched bank-item IDs and a resource record.
+- `GET /api/teacher-groups/:groupId/plan` returns a seeded/cached 15–18 minute plan with matched bank-item IDs and a resource record. The seeded group membership and cached plan are read-only in the current endpoint; a future selection workflow must create its own dated snapshot.
 - A group is created only when at least two students have stored `needs_support` status for the same sub-skill. The UI does not use an AI model to choose mastery levels or group membership.
 
 The handler does not yet attach `AiSource` or `promptVersion` metadata because plans are seeded cached content. Replace each placeholder video URL with its reviewed URL before rehearsal.
@@ -324,16 +369,16 @@ Track A owns these handlers or equivalent server actions:
 
 | Route | Request | Response |
 | --- | --- | --- |
-| `POST /api/responses` | `SubmitResponseRequest` | `SubmitResponseResponse` |
-| `GET /api/diagnostics/:assignmentId?studentId=...` | query parameter | `GetDiagnosticResponse` |
-| `POST /api/diagnostics/:assignmentId/complete` | `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
-| `GET /api/practice/:sessionId?studentId=...` | query parameter | `GetPracticeResponse` |
-| `POST /api/tutor/hint` | `TutorHintRequest` | `TutorHintResponse` |
-| `POST /api/peer-attempts` | `PeerAttemptRequest` | `PeerAttemptResponse` |
-| `GET /api/peer-solutions/:itemId?studentId=...` | query parameter | `GetPeerSolutionResponse` |
-| `GET /api/students/:studentId/mastery?topicId=...` | query parameter | `GetStudentMasteryResponse` |
-| `GET /api/classes/:classId/dashboard` | none | `ClassDashboardResponse` |
-| `GET /api/teacher-groups/:groupId/plan` | none | `TeacherGroupPlanResponse` |
+| `POST /api/responses` | authenticated student + `SubmitResponseRequest` | `SubmitResponseResponse` |
+| `GET /api/diagnostics/:assignmentId` | authenticated student | `GetDiagnosticResponse` |
+| `POST /api/diagnostics/:assignmentId/complete` | authenticated student + `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
+| `GET /api/practice/:sessionId` | authenticated student | `GetPracticeResponse` |
+| `POST /api/tutor/hint` | authenticated student + `TutorHintRequest` | `TutorHintResponse` |
+| `POST /api/peer-attempts` | authenticated student + `PeerAttemptRequest` | `PeerAttemptResponse` |
+| `GET /api/peer-solutions/:itemId` | authenticated student | `GetPeerSolutionResponse` |
+| `GET /api/students/:studentId/mastery?topicId=...` | authenticated student; ID must match actor | `GetStudentMasteryResponse` |
+| `GET /api/classes/:classId/dashboard` | authenticated teacher assigned to class | `ClassDashboardResponse` |
+| `GET /api/teacher-groups/:groupId/plan` | authenticated teacher assigned to group class | `TeacherGroupPlanResponse` |
 
 ## Phase-0 fixtures and constants
 

@@ -1,12 +1,15 @@
 "use client";
 
+// Tutor support rendered as an actual ladder — three ascending rungs of help, smallest first.
+import { Card, Eyebrow, cn } from "@/components/ui";
+
 export type HintLevel = "nudge" | "hint" | "guided_step";
 
-const labels: Record<HintLevel, string> = {
-  nudge: "Nudge",
-  hint: "Hint",
-  guided_step: "Guided step",
-};
+const rungs: Array<{ level: HintLevel; step: string; label: string; description: string }> = [
+  { level: "nudge", step: "01", label: "Nudge", description: "A question to point you back at the problem." },
+  { level: "hint", step: "02", label: "Hint", description: "One specific piece of the method." },
+  { level: "guided_step", step: "03", label: "Guided step", description: "One next actionable step — never the completed solution." },
+];
 
 export function HintLadder({
   activeLevel,
@@ -19,14 +22,61 @@ export function HintLadder({
   onRequest: (level: HintLevel) => void;
   loading?: boolean;
 }) {
-  return <section aria-label="Tutor hints" className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
-    <h2 className="font-semibold text-slate-900">Need a hand?</h2>
-    <p className="mt-1 text-sm text-slate-600">Try the smallest helpful rung first.</p>
-    <div className="mt-3 flex flex-wrap gap-2">
-      {(Object.keys(labels) as HintLevel[]).map((level) => <button key={level} type="button" disabled={loading} onClick={() => onRequest(level)} className="rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-800 disabled:opacity-50">
-        {labels[level]}
-      </button>)}
-    </div>
-    {hint && <p className="mt-4 rounded-md bg-white p-3 text-slate-800" role="status"><span className="font-medium">{activeLevel ? labels[activeLevel] : "Tutor"}:</span> {hint}</p>}
-  </section>;
+  return (
+    <section aria-label="Tutor hints">
+      <Card className="p-6">
+        <Eyebrow className="mb-1">Tutor support</Eyebrow>
+        <h2 className="text-xl font-bold tracking-tight text-ink">Need a hand?</h2>
+        <p className="mt-1 text-sm text-ink-muted">Try the smallest rung first — each one gives a little more away.</p>
+
+        <ol className="mt-5 space-y-2.5">
+          {rungs.map(({ level, step, label, description }) => {
+            const active = activeLevel === level;
+            return (
+              <li key={level}>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onRequest(level)}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex w-full items-center gap-4 rounded-md border px-4 py-3 text-left transition-colors disabled:opacity-50",
+                    // Blue marks "currently selected rung" — green is reserved for correctness/mastery.
+                    active ? "border-focus bg-focus-soft" : "border-border bg-surface hover:border-border-strong",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold",
+                      active ? "bg-focus text-focus-contrast" : "bg-surface-2 text-ink-faint",
+                    )}
+                  >
+                    {step}
+                  </span>
+                  <span className="flex-1">
+                    <span className={cn("block text-base font-semibold", active ? "text-focus" : "text-ink")}>
+                      {label}
+                    </span>
+                    <span className="block text-sm text-ink-muted">{description}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
+        {hint && (
+          // Revealed content gets a step of elevation above the card it lives in (bg-elevated +
+          // shadow-sm) and rises in, so a new hint reads as something that just appeared, not
+          // static copy that was always there.
+          <div className="animate-rise mt-4 rounded-md border border-border bg-elevated p-4 shadow-sm" role="status">
+            <p className="font-mono text-xs uppercase tracking-wider text-ink-faint">
+              {activeLevel ? rungs.find((rung) => rung.level === activeLevel)?.label : "Tutor"}
+            </p>
+            <p className="mt-1 text-ink">{hint}</p>
+          </div>
+        )}
+      </Card>
+    </section>
+  );
 }

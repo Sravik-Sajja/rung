@@ -1,48 +1,101 @@
 // Teacher dashboard route; renders deterministic mastery evidence and groups, never model-generated results.
-import Link from "next/link";
-import { Fragment } from "react";
 import { AppShell } from "@/components/app-shell";
-import { PagePlaceholder } from "@/components/page-placeholder";
+import { GroupCard } from "@/components/teacher/group-card";
+import { MasteryHeatmapTable, MasteryLegend } from "@/components/teacher/mastery-heatmap";
+import { Card, PageHeader } from "@/components/ui";
 import { getDemoTeacherDashboard } from "@/lib/teacher/grouping";
-import type { MasteryLevel } from "@/lib/types";
-
-const levelStyles: Record<MasteryLevel, string> = {
-  not_started: "bg-slate-100 text-slate-700",
-  needs_support: "bg-red-100 text-red-900",
-  developing: "bg-yellow-100 text-yellow-900",
-  mastered: "bg-emerald-100 text-emerald-900"
-};
-
-const levelLabels: Record<MasteryLevel, string> = {
-  not_started: "Not started",
-  needs_support: "Needs support",
-  developing: "Developing",
-  mastered: "Mastered"
-};
 
 export default function DashboardPage() {
   const dashboard = getDemoTeacherDashboard();
-  if (!dashboard) return null;
 
-  return <AppShell><PagePlaceholder title="Ms. Rivera’s fractions class" description="Mastery evidence from diagnostic and practice responses. This prototype is not for grading.">
-    <section aria-labelledby="heatmap-heading">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 id="heatmap-heading" className="text-lg font-semibold">Skill-by-student heatmap</h2></div>
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <div className="grid min-w-[760px] grid-cols-[150px_repeat(5,minmax(110px,1fr))]">
-          <div className="border-b border-r bg-slate-50 p-3 text-sm font-medium">Student</div>
-          {dashboard.subskills.map((subskill) => <div className="border-b border-r bg-slate-50 p-3 text-center text-xs font-medium" key={subskill.id}>{subskill.name}</div>)}
-          {dashboard.students.map((student) => <Fragment key={student.id}>
-            <div className="border-b border-r p-3 text-sm font-medium" key={`${student.id}-name`}>{student.displayName}</div>
-            {dashboard.subskills.map((subskill) => {
-              const cell = dashboard.cells.find((candidate) => candidate.studentId === student.id && candidate.subskillId === subskill.id);
-              if (!cell) return <div className="border-b border-r p-2" key={`${student.id}-${subskill.id}`} />;
-              return <div className="border-b border-r p-2" key={`${student.id}-${subskill.id}`}><span className={`block rounded px-2 py-1 text-center text-xs font-medium ${levelStyles[cell.level]}`} title={cell.evidenceSummary}>{levelLabels[cell.level]}</span></div>;
-            })}
-          </Fragment>)}
+  if (!dashboard) {
+    return (
+      <AppShell active="teacher">
+        <PageHeader
+          description="No class data is available for this demo class."
+          eyebrow="Teacher"
+          title="Class dashboard"
+        />
+      </AppShell>
+    );
+  }
+
+  const totalCells = dashboard.cells.length;
+  const masteredCount = dashboard.cells.filter((cell) => cell.level === "mastered").length;
+  const needsSupportCount = dashboard.cells.filter((cell) => cell.level === "needs_support").length;
+  const masteredPct = totalCells > 0 ? Math.round((masteredCount / totalCells) * 100) : 0;
+
+  const summaryStats: Array<{ label: string; value: string }> = [
+    { label: "Students", value: String(dashboard.students.length) },
+    { label: "Subskills tracked", value: String(dashboard.subskills.length) },
+    { label: "Cells mastered", value: `${masteredPct}%` },
+    { label: "Needs support", value: String(needsSupportCount) },
+    { label: "Suggested groups", value: String(dashboard.groups.length) }
+  ];
+
+  return (
+    <AppShell active="teacher">
+      <PageHeader
+        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence — never model-generated. This prototype is not for grading.`}
+        eyebrow="Teacher · fractions class"
+        title="Ms. Rivera's fractions class"
+      />
+
+      <section aria-label="Class summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {summaryStats.map((stat) => (
+          <Card className="!bg-elevated p-4" key={stat.label}>
+            <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink-muted">{stat.label}</p>
+            <p className="mt-1.5 font-mono text-2xl font-semibold tabular-nums text-ink">{stat.value}</p>
+          </Card>
+        ))}
+      </section>
+
+      <section aria-labelledby="heatmap-heading" className="mt-10 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-ink" id="heatmap-heading">
+            Skill-by-student heatmap
+          </h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            One row per student, one column per subskill. Each cell pairs a mastery color with a text label,
+            and hovering a cell shows the stored evidence behind it.
+          </p>
         </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs">{Object.entries(levelLabels).map(([level, label]) => <span className={`rounded px-2 py-1 ${levelStyles[level as MasteryLevel]}`} key={level}>{label}</span>)}</div>
-    </section>
-    <section className="mt-8" aria-labelledby="groups-heading"><h2 id="groups-heading" className="text-lg font-semibold">Suggested small groups</h2><p className="mt-1 text-sm text-slate-600">Students are grouped when two or more share a stored needs-support status.</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{dashboard.groups.map((group) => <Link className="rounded-lg border border-slate-200 p-4 transition hover:border-indigo-400 hover:bg-indigo-50" href={`/teacher/groups/${group.id}`} key={group.id}><p className="font-medium">{group.label}</p><p className="mt-1 text-sm text-slate-600">{group.studentIds.length} students · view group plan</p></Link>)}</div></section>
-  </PagePlaceholder></AppShell>;
+
+        <Card className="!bg-elevated overflow-hidden p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink-muted">Legend</p>
+            <MasteryLegend dashboard={dashboard} />
+          </div>
+          <MasteryHeatmapTable dashboard={dashboard} />
+        </Card>
+      </section>
+
+      <section aria-labelledby="groups-heading" className="mt-10">
+        <h2 className="text-lg font-semibold text-ink" id="groups-heading">
+          Suggested small groups
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Students are grouped when two or more share a stored needs-support status on the same subskill.
+        </p>
+
+        {dashboard.groups.length === 0 ? (
+          <Card className="!bg-elevated mt-3 p-5">
+            <p className="text-sm text-ink-muted">
+              No subskill currently has two or more students marked needs-support, so no groups are suggested.
+            </p>
+          </Card>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {dashboard.groups.map((group) => (
+              <GroupCard
+                group={group}
+                key={group.id}
+                subskill={dashboard.subskills.find((subskill) => subskill.id === group.subskillId)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    </AppShell>
+  );
 }

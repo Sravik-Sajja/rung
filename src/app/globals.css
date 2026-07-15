@@ -1,9 +1,174 @@
-/* Global Tailwind layers and small app-wide browser defaults. */
+/* Rung design tokens + base styles. Theme flips via CSS variables — components never use dark: variants.
+   Palette v2: near-neutral canvas so the evergreen brand and gold spark read as intentional accents,
+   with a real elevation ladder (bg -> surface -> elevated) + layered shadows for product-grade depth. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  /* Neutrals — clean, barely-warm canvas with a visible elevation ladder */
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --surface-2: #edefea;
+  --elevated: #ffffff;
+  --border: #e3e6e0;
+  --border-strong: #ccd1c7;
+  --ink: #182420;
+  --ink-muted: #556059;
+  --ink-faint: #828c85;
+
+  /* Accent — evergreen brand, more vivid for confident primary actions */
+  --accent: #0f8a5f;
+  --accent-hover: #0b7350;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e0f1e9;
+
+  /* Spark — warm gold energy for streaks, wins, momentum (student surface) */
+  --spark: #e2952a;
+  --spark-soft: #f8ecd6;
+  --spark-fg: #402c07;
+  --spark-ink: #8a5410;
+
+  /* Focus — friendly blue for STUDENT primary actions (green stays the "correct / mastered" signal) */
+  --focus: #1f74d6;
+  --focus-hover: #195fb3;
+  --focus-contrast: #ffffff;
+  --focus-soft: #e4eefb;
+
+  /* Mastery scale — semantic, separate from accent */
+  --m-none: #d7dad3;
+  --m-none-fg: #414a43;
+  --m-support: #cc5f34;
+  --m-support-fg: #ffffff;
+  --m-developing: #d9a63f;
+  --m-developing-fg: #3c3313;
+  --m-mastered: #1f9266;
+  --m-mastered-fg: #ffffff;
+
+  --ring: #0f8a5f;
+  --shadow-sm: 0 1px 2px rgba(20, 30, 25, 0.06);
+  --shadow-md: 0 2px 4px rgba(20, 30, 25, 0.05), 0 8px 20px rgba(20, 30, 25, 0.08);
+  --shadow-lg: 0 4px 8px rgba(20, 30, 25, 0.06), 0 18px 44px rgba(20, 30, 25, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    /* De-greened, richly layered dark so components float instead of washing together */
+    --bg: #0e1210;
+    --surface: #171c19;
+    --surface-2: #1f2521;
+    --elevated: #242b27;
+    --border: #2b322e;
+    --border-strong: #3b433e;
+    --ink: #eaefeb;
+    --ink-muted: #a4ada7;
+    --ink-faint: #737c77;
+
+    --accent: #34b487;
+    --accent-hover: #40c596;
+    --accent-contrast: #04130c;
+    --accent-soft: #16271e;
+
+    --spark: #efab4a;
+    --spark-soft: #2c2214;
+    --spark-fg: #1a1305;
+    --spark-ink: #f2c07a;
+
+    --focus: #4a9be8;
+    --focus-hover: #5aa8ef;
+    --focus-contrast: #051423;
+    --focus-soft: #122436;
+
+    --m-none: #333b36;
+    --m-none-fg: #c3cdc4;
+    --m-support: #cc6a3f;
+    --m-support-fg: #140907;
+    --m-developing: #cfa249;
+    --m-developing-fg: #16130a;
+    --m-mastered: #33a87d;
+    --m-mastered-fg: #05130d;
+
+    --ring: #34b487;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.4), 0 12px 30px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 4px 10px rgba(0, 0, 0, 0.45), 0 22px 52px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* Manual overrides win over the media query in both directions (ready for a theme toggle). */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f5f2; --surface: #ffffff; --surface-2: #edefea; --elevated: #ffffff;
+  --border: #e3e6e0; --border-strong: #ccd1c7;
+  --ink: #182420; --ink-muted: #556059; --ink-faint: #828c85;
+  --accent: #0f8a5f; --accent-hover: #0b7350; --accent-contrast: #ffffff; --accent-soft: #e0f1e9;
+  --spark: #e2952a; --spark-soft: #f8ecd6; --spark-fg: #402c07; --spark-ink: #8a5410;
+  --focus: #1f74d6; --focus-hover: #195fb3; --focus-contrast: #ffffff; --focus-soft: #e4eefb;
+  --m-none: #d7dad3; --m-none-fg: #414a43; --m-support: #cc5f34; --m-support-fg: #ffffff;
+  --m-developing: #d9a63f; --m-developing-fg: #3c3313; --m-mastered: #1f9266; --m-mastered-fg: #ffffff;
+  --ring: #0f8a5f;
+  --shadow-sm: 0 1px 2px rgba(20, 30, 25, 0.06);
+  --shadow-md: 0 2px 4px rgba(20, 30, 25, 0.05), 0 8px 20px rgba(20, 30, 25, 0.08);
+  --shadow-lg: 0 4px 8px rgba(20, 30, 25, 0.06), 0 18px 44px rgba(20, 30, 25, 0.12);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1210; --surface: #171c19; --surface-2: #1f2521; --elevated: #242b27;
+  --border: #2b322e; --border-strong: #3b433e;
+  --ink: #eaefeb; --ink-muted: #a4ada7; --ink-faint: #737c77;
+  --accent: #34b487; --accent-hover: #40c596; --accent-contrast: #04130c; --accent-soft: #16271e;
+  --spark: #efab4a; --spark-soft: #2c2214; --spark-fg: #1a1305; --spark-ink: #f2c07a;
+  --focus: #4a9be8; --focus-hover: #5aa8ef; --focus-contrast: #051423; --focus-soft: #122436;
+  --m-none: #333b36; --m-none-fg: #c3cdc4; --m-support: #cc6a3f; --m-support-fg: #140907;
+  --m-developing: #cfa249; --m-developing-fg: #16130a; --m-mastered: #33a87d; --m-mastered-fg: #05130d;
+  --ring: #34b487;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.4), 0 12px 30px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 4px 10px rgba(0, 0, 0, 0.45), 0 22px 52px rgba(0, 0, 0, 0.55);
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; background: #f8fafc; color: #172033; font-family: Arial, sans-serif; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
 a { color: inherit; }
 button { cursor: pointer; }
+
+::selection { background: var(--accent-soft); }
+
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Student-surface momentum: celebratory pop and rise. Disabled under reduced-motion below. */
+@keyframes rung-pop {
+  0% { transform: scale(0.96); opacity: 0; }
+  60% { transform: scale(1.02); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes rung-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-pop { animation: rung-pop 0.3s ease-out both; }
+.animate-rise { animation: rung-rise 0.4s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}

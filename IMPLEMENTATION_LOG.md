@@ -117,6 +117,50 @@ Use this template for every meaningful change:
 - The diagnostic-completion, practice-session/requeue, peer-gate, and student mastery routes remain to be wired to the persisted student-loop service.
 - Seeded video URLs remain explicit placeholders and must be replaced with reviewed resources before the demo rehearsal.
 
+## 2026-07-14 â€” deployable-MVP decisions, Auth/RLS, and live AI fallback
+
+### Completed
+
+- Updated `architecture.md` and `contracts.md` with the approved deployable-MVP choices: Supabase Auth/RLS, five fixed diagnostic items, deterministic learning decisions, and Option B live GPT-5.6 → verified cache → safe fallback.
+- Added `supabase/migrations/004_auth_rls_foundation.sql`, keeping existing seed IDs compatible while establishing profiles, teacher ownership, role-aware RLS policies, and a server/session Supabase client boundary.
+- Added the GPT-5.6 adapter runtime: Luna is the routine default, Terra can be selected for diagnosis/teacher work, outputs are Zod-validated, valid calls are logged/cached in `ai_runs`, and no-cache peer verification fails closed.
+- Expanded the canonical diagnostic assignment from one item to five stable fraction items and locked their order in shared contracts/tests.
+
+### Validation
+
+- `npm.cmd test`: 6 files / 23 tests passed.
+- `npx.cmd tsc --noEmit`: passed.
+- `git diff --check`: passed after all changes settled.
+
+### Bugs / follow-ups
+
+- Existing route handlers still need authenticated-session extraction plus actor checks before the new RLS production path is fully enforced.
+- `POST /api/tutor/hint` now uses the live/cache/fallback adapter. The diagnostic and peer route handlers still need to be wired to their corresponding adapter methods.
+- Existing unrelated uncommitted UI work was preserved and not included in this checkpoint's ownership.
+
+## 2026-07-15 â€” diagnostic-driven practice loop
+
+### Completed
+
+- Added `005_diagnostic_practice_loop.sql`: diagnostic sessions and response-to-session foreign keys make repeated diagnostics and persisted practice runs unambiguous.
+- Added deterministic diagnostic evidence, prerequisite-first gap selection, four-item practice selection, one-time requeue, and stable mastery transition rules under `src/lib/student/learning-loop.ts`.
+- Added Supabase-backed and local-demo implementations for diagnostic start/submit/complete, practice reads, practice responses, and student mastery reads.
+- Added server-owned routes for diagnostics, completion, practice, responses, and mastery. Development defaults to the isolated demo actor; production requires an authenticated student actor.
+- Replaced hardcoded diagnostic/practice UI state with route-driven screens. Maya’s common-denominator miss now generates `common-denominator-1`, `common-denominator-2`, `add-unlike-1`, and `add-unlike-2`.
+- Expanded the frozen seeded item bank with the missing common-denominator and unlike-denominator practice items.
+
+### Validation
+
+- `npm.cmd test`: 8 files / 29 tests passed.
+- `npx.cmd tsc --noEmit`: passed.
+- `npm.cmd run build`: passed.
+- Local API rehearsal: Maya’s diagnostic selected `find-common-denominator`; a correct first practice answer advanced to `common-denominator-2` and updated mastery to `developing`.
+
+### Bugs / follow-ups
+
+- Peer-attempt persistence/verification and optional photo analysis are still separate work; the photo UI is not stored or analyzed by this practice-loop change.
+- Production deployment requires applying migrations through `005`, seeding Supabase, setting `DEMO_MODE=false`, and adding the sign-in UI that supplies Supabase bearer tokens.
+
 ## 2026-07-14 — parallel-contract plan locked
 
 ### Completed

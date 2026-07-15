@@ -3,7 +3,7 @@ import type { AttemptVerification, DiagnosisExplanation, HintLevel, TutorHint } 
 export const tutorHintFallbacks: Record<HintLevel, TutorHint> = {
   nudge: { level: "nudge", hint: "Look carefully at the denominators first.", source: "fallback", promptVersion: "tutor-v1", aiRunId: "fallback-tutor-nudge", leakCheck: "passed" },
   hint: { level: "hint", hint: "Find a common denominator before you add.", source: "fallback", promptVersion: "tutor-v1", aiRunId: "fallback-tutor-hint", leakCheck: "passed" },
-  guided_step: { level: "guided_step", hint: "What number is a multiple of both denominators?", source: "fallback", promptVersion: "tutor-v1", aiRunId: "fallback-tutor-guided-step", leakCheck: "passed" },
+  guided_step: { level: "guided_step", hint: "Choose a common denominator, rewrite both fractions over it, then add only the numerators. What fraction do you get?", source: "fallback", promptVersion: "tutor-v1", aiRunId: "fallback-tutor-guided-step", leakCheck: "passed" },
 };
 
 export const mayaDiagnosisFallback: DiagnosisExplanation = {
