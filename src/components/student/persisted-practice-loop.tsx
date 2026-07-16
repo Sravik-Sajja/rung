@@ -181,7 +181,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
                 each question. Two zones: question, then answer + help + one morphing action button. */}
             <div key={current.practiceSessionItemId} className="animate-rise rounded-2xl border border-border bg-elevated shadow-lg">
               <div className="flex flex-col items-center gap-3 p-8 text-center sm:p-10 2xl:p-14">
-                {current.plan && <div className="w-full rounded-lg border border-focus bg-focus-soft p-3 text-left"><p className="text-xs font-semibold uppercase tracking-wide text-focus">Practice plan: {current.plan.title}</p><p className="mt-1 text-sm text-ink-muted">{current.plan.reason}</p></div>}
+                {current.plan && <div className="w-full border-l-2 border-focus pl-4 text-left"><p className="text-sm font-semibold text-focus">Practice plan &middot; {current.plan.title}</p><p className="mt-1 text-sm text-ink-muted">{current.plan.reason}</p></div>}
                 {current.isResurfaced && (
                   <span className="inline-flex items-center rounded-full border border-spark bg-spark-soft px-3 py-1 text-xs font-semibold text-spark-ink">
                     Quick revisit

@@ -63,9 +63,9 @@ function DiagnosisContent() {
             {result && (
               <div className="space-y-4">
                 <Card className="animate-rise p-6"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{result.diagnosis.observation}</p><p className="mt-2 text-ink-muted">{result.diagnosis.explanation}</p></Card>
-                {/* The next step is the payoff of the whole check-in — spark-gold gives it the "here's your
-                    momentum" lift instead of blending into another green panel. */}
-                <div className="animate-rise rounded-xl border border-spark bg-spark-soft p-6"><p className="mb-2 font-mono text-xs font-medium uppercase tracking-wider text-spark-ink">Next step</p><p className="text-ink">{result.diagnosis.nextStep}</p></div>
+                {/* The next step is the payoff of the whole check-in — a gold margin annotation gives it
+                    the "here's your momentum" lift instead of blending into another green panel. */}
+                <div className="animate-rise border-l-2 border-spark pl-4"><p className="text-sm font-semibold text-spark-ink">Next step</p><p className="mt-1 text-lg text-ink">{result.diagnosis.nextStep}</p></div>
                 <div className="grid gap-3">{(result.practicePlans?.length ? result.practicePlans : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }]).map((plan) => {
                   const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
                   const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId)}&completedPlan=${encodeURIComponent(plan.id)}`;
