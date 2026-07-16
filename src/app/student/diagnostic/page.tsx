@@ -7,7 +7,6 @@ import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
 import { NumberLineQuestion } from "@/components/student/number-line-question";
 import { FractionInput, answerModeForSubskill, type FractionInputHandle } from "@/components/student/fraction-input";
-import { ItemModel } from "@/components/student/models/item-model";
 import { Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import type { ItemVisualSpec } from "@/lib/types";
@@ -193,14 +192,6 @@ function DiagnosticContent() {
                   <FractionExpression text={item.prompt} size="lg" className="justify-center 2xl:text-4xl" />
                   {item.visualSpec?.kind === "number_line" && <NumberLineQuestion visualSpec={item.visualSpec} />}
                 </div>
-
-                <ItemModel
-                  subskillId={item.subskillId}
-                  disabled={recorded}
-                  onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
-                  visualSpec={item.visualSpec}
-                />
-
                 {/* Answer zone: inputs mirror the stacked fraction in the prompt, the hint stays a
                     quiet text affordance until asked for, and one primary button holds the bottom
                     slot — Save morphs into Next in place once the answer is recorded. The label is

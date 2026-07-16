@@ -83,9 +83,14 @@ describe("per-student diagnostic items", () => {
 
   it("varies the question form across students, not only the numbers", () => {
     for (const slotId of canonicalDiagnosticItemIds) {
-      const shapes = new Set(MANY_STUDENT_IDS.map((studentId) =>
-        shapeOf(buildDiagnosticItems(studentId).find((item) => item.id === slotId)!.prompt),
-      ));
+      const shapes = new Set(MANY_STUDENT_IDS.map((studentId) => {
+        const item = buildDiagnosticItems(studentId).find((candidate) => candidate.id === slotId)!;
+        // Number-line questions deliberately have stable visual-first wording;
+        // their variation lives in the marked point rather than the sentence.
+        return item.visualSpec?.kind === "number_line"
+          ? `point:${item.visualSpec.markedNumerator}/${item.visualSpec.denominator}`
+          : shapeOf(item.prompt);
+      }));
       expect(shapes.size).toBeGreaterThan(1);
     }
   });

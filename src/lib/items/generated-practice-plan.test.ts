@@ -49,6 +49,9 @@ describe("generated practice plan validation and materialization", () => {
         itemIdAt: (index) => `${testCase.targetSubskillId}-${index}`,
       });
       expect(item.prompt).toBe(testCase.expectedPrompt);
+      if (testCase.targetSubskillId === "fraction-number-line") {
+        expect(item.visualSpec).toEqual({ kind: "number_line", denominator: 2, markedNumerator: 1, pointLabel: "C" });
+      }
     }
   });
 

@@ -226,6 +226,22 @@ Every adapter invocation—AI, cache, fallback, or safety rejection—creates an
 
 `generatePracticePlan` returns 3–4 items of exactly one supported kind for its target sub-skill: `number_line`, `equivalent_fraction`, `common_denominator`, or `fraction_operation`. It returns parameters only, never a prompt, answer, or solution. The server reconstructs the learner-facing item and scores it deterministically. If one returned item fails schema, target-kind, or math validation, reject the entire plan and use that skill's fallback plan; do not mix valid and invalid items.
 
+### Teacher mini-lesson contract
+
+generateTeacherLessonDraft receives a group label, sub-skill name, student count, practice-item count, and prompt version. It returns one objective, a pencil-and-paper-only materials list, 3–5 timed steps, and one check-for-understanding prompt.
+
+The steps must follow warm-up, teacher model, guided work, matched practice, and exit check. Each activity is one concrete instruction of at most 120 characters. The draft may refer generally to matched practice problems, but it must not repeat raw practice prompts, name learners, invent evidence, provide answer keys, or decide group membership. A failed or rejected call returns the same short, pencil-and-paper fallback shape. The cache key includes the prompt version; current teacher prompt version is teacher-lesson-v4.
+
+### Student practice workspace contract
+
+The diagnostic has no interactive workspaces. In practice, a workspace is selected deterministically by sub-skill and is never a scoring authority:
+
+- fraction-number-line: the static visual specification is the question; the learner enters the represented fraction in the normal answer control.
+- equivalent-fractions: a scale-factor table lets the learner supply the multiplier and new numerator; it does not shade or calculate the answer.
+- unlike-denominator addition/subtraction: fraction bars support learner-selected partitions and shading.
+
+Workspaces may copy the learner's constructed value into the answer field. Server-side deterministic scoring remains the only correctness authority.
+
 ### Item-wrap invariant
 
 `wrapItem` may alter only the learner-facing prompt. The parametric item's ID, operands, answer specification, distractor map, sub-skill, difficulty, solution steps, and computed answer remain unchanged. It is an adapter capability, not the current seeded/rehearsal path. Before it can update a prompt, its validator result and provenance must be persisted at the existing item ID; it never creates a new item.

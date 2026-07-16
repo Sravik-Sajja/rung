@@ -3,7 +3,12 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { analyzeWorkInputSchema, generatedPracticePlanSchema, tutorHintInputSchema } from "@/lib/ai/contracts";
+import {
+  analyzeWorkInputSchema,
+  generatedPracticePlanSchema,
+  teacherLessonDraftSchema,
+  tutorHintInputSchema
+} from "@/lib/ai/contracts";
 import type {
   AiSource,
   AttemptVerification,
@@ -18,13 +23,14 @@ import type {
   TutorHint,
   WorkAnalysis,
   GeneratedPracticePlan,
+  TeacherLessonDraft,
 } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
 import { containsAnswerLeak, containsGenericTutorLeak, containsTutorHintLeak } from "@/lib/ai/leakage";
 import { generatedPracticePlanFallback, validateGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 
-export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "practice_plan" | "item_wrap";
+export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "practice_plan" | "teacher_lesson" | "item_wrap";
 export type AiRunStatus = "valid" | "live_failed" | "cache_hit" | "fallback";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
@@ -36,6 +42,7 @@ export interface AiModelConfig {
   attempt_verification?: string;
   work_analysis?: string;
   practice_plan?: string;
+  teacher_lesson?: string;
   item_wrap?: string;
 }
 
@@ -103,6 +110,7 @@ const workAnalysisPayloadSchema = z.object({
 
 const itemWrapPayloadSchema = z.object({ prompt: z.string().min(1) });
 const practicePlanPayloadSchema = z.object({ items: generatedPracticePlanSchema.shape.items });
+const teacherLessonPayloadSchema = teacherLessonDraftSchema.omit({ source: true, promptVersion: true, aiRunId: true });
 
 type ResolvedPayload<Payload> = { payload: Payload; source: AiSource; aiRunId: string };
 
@@ -427,6 +435,45 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       return { items: result.payload.items, source: result.source, promptVersion: input.promptVersion, aiRunId: result.aiRunId } satisfies GeneratedPracticePlan;
     },
 
+    async generateTeacherLessonDraft(input) {
+      const result = await resolveStructuredPayload({
+        feature: "teacher_lesson",
+        promptVersion: input.promptVersion,
+        inputHash: hashInput(input),
+        model: modelFor("teacher_lesson", models),
+        schema: teacherLessonPayloadSchema,
+        completionClient,
+        runStore,
+        request: {
+          schemaName: "teacher_lesson",
+          system: [
+            "Draft a concise 15–20 minute middle-school small-group lesson.",
+            "Use the supplied group skill, student count, and assigned-practice count only.",
+            "Return a practical sequence: warm-up, teacher model, guided work, assigned practice, then exit check.",
+            "Each activity must be one short, concrete teacher instruction under 200 characters; do not use compound sentences.",
+            "Assume only pencil and paper are available; do not require manipulatives, printed cards, whiteboards, or technology.",
+            "List only pencil and paper in materials.",
+            "Refer to the assigned practice only as 'matched practice cards'—do not quote or repeat problem prompts.",
+            "Return an objective, materials, 3–5 timed steps, and one more challenging check-for-understanding.",
+            "Do not name students, invent evidence, provide answer keys, or write a completed solution.",
+          ].join(" "),
+          user: JSON.stringify(input),
+        },
+        fallback: () => ({
+          objective: `Strengthen ${input.subskillName} through a short model-and-practice lesson.`,
+          materials: ["Pencil", "Paper"],
+          steps: [
+            { minutes: 3, activity: `Warm up: name the key feature of ${input.subskillName}.` },
+            { minutes: 6, activity: "Model one example and narrate each decision." },
+            { minutes: 7, activity: "Pairs solve the matched practice problems and compare methods." },
+            { minutes: 3, activity: "Independently solve one matched practice problem." },
+          ],
+          checkForUnderstanding: "Ask each learner to justify the method used on the final card.",
+        }),
+      });
+      return { ...result.payload, source: result.source, promptVersion: input.promptVersion, aiRunId: result.aiRunId } satisfies TeacherLessonDraft;
+    },
+
     async analyzeWork(rawInput) {
       const input = analyzeWorkInputSchema.parse(rawInput);
       const result = await resolveStructuredPayload({
@@ -549,6 +596,7 @@ export function readModelConfig(env: NodeJS.ProcessEnv = process.env): AiModelCo
     attempt_verification: env.OPENAI_MODEL_ATTEMPT_VERIFICATION,
     work_analysis: env.OPENAI_MODEL_WORK_ANALYSIS,
     practice_plan: env.OPENAI_MODEL_PRACTICE_PLAN,
+    teacher_lesson: env.OPENAI_MODEL_TEACHER_LESSON,
     item_wrap: env.OPENAI_MODEL_ITEM_WRAP,
   };
 }

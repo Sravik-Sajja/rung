@@ -452,3 +452,27 @@ Use this template for every meaningful change:
 
 - `npm run build` compiled and type-checked successfully but failed during page-data collection because the shared `.next` directory referenced a missing stale chunk (`331.js`). No source error was reported; stop concurrent dev/build processes or use an isolated build directory before treating this as a release build.
 - Migration `009` has not been applied to a live Supabase project in this workspace.
+
+## 2026-07-16 - teacher lesson clarity and group-page loading
+
+### Completed
+
+- Refined the teacher lesson draft contract and prompt to produce a short, practical sequence: warm-up, teacher model, guided work, matched practice, and exit check.
+- Lesson steps are now limited to one concrete action, preventing truncated or overly generic directions.
+- Teacher plans assume pencil and paper only; they do not depend on cards, manipulatives, whiteboards, or technology.
+- Kept matched practice deterministic and displayed beside the lesson, while lesson text refers to it generally rather than repeating raw item prompts.
+- Added immediate route-level loading UI for the teacher group page, so selecting a group navigates at once and shows a group/lesson skeleton while the server draft resolves.
+- Made number-line items visual-first: a labelled fixed point on a 0–1 line is the question, with no separate number-line workspace or accepted fraction in prompt text.
+- Limited “Work it out” support to targeted practice. Diagnostics remain tool-free; equivalent fractions use a scale-factor workspace, while unlike-denominator operations use fraction bars.
+- Bumped the teacher lesson prompt version to teacher-lesson-v4 so older cached generic drafts are not reused.
+
+### Validation
+
+- npx tsc --noEmit: passed.
+- npm test: 23 files / 145 tests passed.
+- git diff --check: passed.
+
+### Bugs / follow-ups
+
+- The teacher group page still renders a live/cache/fallback draft on request; persist selected teacher lesson snapshots and add a teacher-visible retry/error treatment before production use.
+- Prompting for lessons could be better

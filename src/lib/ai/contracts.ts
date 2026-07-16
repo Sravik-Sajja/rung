@@ -168,6 +168,13 @@ export const generatedPracticePlanSchema = metaSchema.extend({
   items: z.array(z.discriminatedUnion("kind", [fractionOperationPlanItem, numberLinePlanItem, equivalentFractionPlanItem, commonDenominatorPlanItem])).min(3).max(4),
 });
 export type GeneratedPracticePlan = z.infer<typeof generatedPracticePlanSchema>;
+export const teacherLessonDraftSchema = metaSchema.extend({
+  objective: z.string().min(1).max(220),
+  materials: z.array(z.string().min(1).max(100)).min(1).max(8),
+  steps: z.array(z.object({ minutes: z.number().int().min(1).max(20), activity: z.string().min(1).max(120) })).min(3).max(5),
+  checkForUnderstanding: z.string().min(1).max(220),
+});
+export type TeacherLessonDraft = z.infer<typeof teacherLessonDraftSchema>;
 
 export interface RungAiAdapter {
   diagnoseExplanation(input: { studentId: string; assignmentId: string; gradeBand: string; targetSubskillId: string; supportedMisconceptionTags: string[]; evidence: DiagnosisEvidence[]; promptVersion: string }): Promise<DiagnosisExplanation>;
@@ -175,5 +182,6 @@ export interface RungAiAdapter {
   verifyAttempt(input: { studentId: string; item: SafeItem; attemptText: string; explanation: string; normalizedAttemptText: string; promptVersion: string }): Promise<AttemptVerification>;
   analyzeWork(input: AnalyzeWorkInput): Promise<WorkAnalysis>;
   generatePracticePlan(input: { studentId: string; targetSubskillId: string; misconceptionTags: string[]; promptVersion: string }): Promise<GeneratedPracticePlan>;
+  generateTeacherLessonDraft(input: { groupLabel: string; subskillName: string; studentCount: number; practiceItemCount: number; promptVersion: string }): Promise<TeacherLessonDraft>;
   wrapItem(input: { item: ParametricItem; promptVersion: string }): Promise<ItemWrap>;
 }

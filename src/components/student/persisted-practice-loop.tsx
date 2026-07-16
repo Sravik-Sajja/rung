@@ -191,9 +191,10 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
                 {current.visualSpec?.kind === "number_line" && <NumberLineQuestion visualSpec={current.visualSpec} />}
               </div>
 
-              <ItemModel
-                subskillId={current.subskillId}
-                disabled={lastCorrect}
+                <ItemModel
+                  subskillId={current.subskillId}
+                  prompt={current.prompt}
+                  disabled={lastCorrect}
                 onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
                 visualSpec={current.visualSpec}
               />

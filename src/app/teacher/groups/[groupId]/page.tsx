@@ -8,20 +8,29 @@ import { VideoRecommendationCard } from "@/components/teacher/video-recommendati
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { demoItems } from "@/lib/demo-data";
 import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan } from "@/lib/teacher/grouping";
+import { runtimeAiAdapter } from "@/lib/ai/adapter";
 
 export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
   const group = getDemoTeacherGroup(groupId);
   const dashboard = getDemoTeacherDashboard();
-  const plan = getDemoTeacherGroupPlan(groupId);
-  if (!group || !dashboard || !plan) notFound();
+  const seededPlan = getDemoTeacherGroupPlan(groupId);
+  if (!group || !dashboard || !seededPlan) notFound();
 
   const students = dashboard.students.filter((student) => group.studentIds.includes(student.id));
   const subskill = dashboard.subskills.find(({ id }) => id === group.subskillId);
-  const practiceItems = plan.practiceItemIds.flatMap((itemId) => {
+  const practiceItems = seededPlan.practiceItemIds.flatMap((itemId) => {
     const item = demoItems.find(({ id }) => id === itemId);
     return item ? [item] : [];
   });
+  const draft = await runtimeAiAdapter.generateTeacherLessonDraft({
+    groupLabel: group.label,
+    subskillName: subskill?.name ?? group.subskillId,
+    studentCount: group.studentIds.length,
+    practiceItemCount: practiceItems.length,
+    promptVersion: "teacher-lesson-v4",
+  });
+  const plan = { ...seededPlan, objective: draft.objective, materials: draft.materials, steps: draft.steps, checkForUnderstanding: draft.checkForUnderstanding };
 
   return (
     <AppShell active="teacher">

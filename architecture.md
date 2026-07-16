@@ -149,6 +149,8 @@ The adapter is responsible for:
 - Timeouts, error handling, and a cached/seeded fallback for the demo.
 - Recording the prompt version, model identifier, latency, outcome, and request ID when available.
 
+Teacher lesson drafts receive only the stable group label, target sub-skill, student count, and matched-practice count. They must produce a concise 15–20 minute pencil-and-paper sequence: warm-up, teacher model, guided work, matched practice, and exit check. The model never determines membership, mastery, or the practice set, and it must not require special materials, quote student work, provide answer keys, or produce long multi-action directions.
+
 Use the currently approved OpenAI model configured by an environment variable rather than hard-coding a model name. This keeps the architecture stable if the hackathon model changes.
 
 ### Cache and fallback policy
@@ -425,7 +427,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 - `/teacher/dashboard` — selected class, skill-by-student heatmap, concise legend, groups.
 - `/teacher/groups/[groupId]` — group members, shared gap, mini-lesson, practice recommendation, vetted video.
 
-Do not build an elaborate navigation system. A visible “Switch to teacher view” control at the end of student practice supports the demo flow.
+Do not build an elaborate navigation system. A visible “Switch to teacher view” control at the end of student practice supports the demo flow. The teacher group route displays a loading skeleton immediately while its server lesson draft is prepared.
 
 ## 13. UI data contracts
 
@@ -446,6 +448,8 @@ The student-facing diagnosis must distinguish between observation and interpreta
 Avoid labels such as “behind,” “bad at fractions,” or a calculated grade level.
 
 An item may carry a learner-safe `visualSpec`. The current `number_line` visual has a denominator, marked numerator, and point label; it is descriptive geometry only. It is sent to the student separately from the server-only answer specification and rendered as a static, accessible diagram for identification questions.
+
+Diagnostic items do not render a “Work it out” workspace, because the check-in measures independent performance. Targeted practice may render one skill-matched workspace: a static labelled number line is the question itself (not a second answer mechanism); equivalent-fraction items use a scale-factor table; unlike-denominator addition and subtraction use fraction bars. These workspaces can transfer a learner-entered result to the answer field but must never prefill or reveal the correct answer.
 
 ## 14. Seed dataset requirements
 
@@ -478,6 +482,7 @@ A temporary walkthrough cookie lasts eight hours. Expired durable participant ro
 - Work-help accepts only JPEG, PNG, or WebP photos up to 5 MiB, processes them only in request memory, and uses only fictional/demo work in recordings.
 - Rehearse the answer-safe fallback for every demo-critical diagnosis, tutor, work-analysis, lesson-plan, and item-generation moment.
 - Include loading, retry, and fallback states for each AI-dependent interaction.
+- Teacher mini-lessons must be usable with pencil and paper alone. Keep each timed activity short, concrete, and single-action so teachers can scan it while teaching.
 - Provide a documented CLI command to reset the database to the canonical seed state before every rehearsal or recording. Do not expose a production reset endpoint.
 - Use a clear prototype notice: not for grading, not a substitute for teacher judgment.
 

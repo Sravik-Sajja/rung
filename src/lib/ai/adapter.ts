@@ -43,6 +43,22 @@ export const fallbackAiAdapter: RungAiAdapter = {
       aiRunId: `fallback-practice-plan-${input.targetSubskillId}`,
     };
   },
+  async generateTeacherLessonDraft(input) {
+    return {
+      objective: `Strengthen ${input.subskillName} through a short model-and-practice lesson.`,
+      materials: ["Pencil", "Paper"],
+      steps: [
+        { minutes: 3, activity: `Warm up: name the key feature of ${input.subskillName}.` },
+        { minutes: 6, activity: "Model one example and narrate each decision." },
+        { minutes: 7, activity: "Pairs solve the matched practice problems and compare methods." },
+        { minutes: 3, activity: "Independently solve one matched practice problem." },
+      ],
+      checkForUnderstanding: "Ask each learner to justify the method used on the final card.",
+      source: "fallback",
+      promptVersion: input.promptVersion,
+      aiRunId: `fallback-teacher-lesson-${input.groupLabel}`,
+    };
+  },
   async wrapItem(input) {
     return { itemId: input.item.id, prompt: input.item.prompt, source: "fallback", promptVersion: input.promptVersion, aiRunId: `fallback-wrap-${input.item.id}` };
   },

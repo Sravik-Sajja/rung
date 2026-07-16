@@ -4,17 +4,19 @@
 // Leakage-safe: the student chooses their own subdivisions/marks, nothing is
 // pre-filled toward the correct answer. Subskills with no mapped model render
 // nothing at all (return null) so the card looks exactly like it does today.
-import { NumberLineModel } from "./number-line-model";
 import { FractionBarModel } from "./fraction-bar-model";
 import type { ItemVisualSpec } from "@/lib/types";
+import { EquivalentFractionModel } from "./equivalent-fraction-model";
 
 export function ItemModel({
   subskillId,
+  prompt,
   disabled,
   onUseAnswer,
   visualSpec,
 }: {
   subskillId: string;
+  prompt: string;
   disabled?: boolean;
   onUseAnswer: (answer: string) => void;
   visualSpec?: ItemVisualSpec;
@@ -25,11 +27,8 @@ export function ItemModel({
   if (visualSpec?.kind === "number_line") return null;
   let model: React.ReactNode;
   switch (subskillId) {
-    case "fraction-number-line":
-      model = <NumberLineModel disabled={disabled} onUseAnswer={onUseAnswer} />;
-      break;
     case "equivalent-fractions":
-      model = <FractionBarModel bars={2} disabled={disabled} onUseAnswer={onUseAnswer} />;
+      model = <EquivalentFractionModel prompt={prompt} disabled={disabled} onUseAnswer={onUseAnswer} />;
       break;
     case "add-unlike-denominators":
       model = <FractionBarModel bars={2} operation="add" disabled={disabled} onUseAnswer={onUseAnswer} />;
