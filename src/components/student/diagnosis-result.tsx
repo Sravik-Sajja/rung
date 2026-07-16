@@ -15,5 +15,5 @@ export function DiagnosisResult({ sessionId }: { sessionId?: string }) {
   }, []);
 
   const activeSessionId = sessionId ?? "practice-maya-chen-common-denominator";
-  return <><p>{diagnosis?.observation ?? "Complete the diagnostic to see your answer-pattern observation."}</p><p className="mt-2">Next step: {diagnosis?.nextStep ?? "Practice finding a common denominator before adding."}</p><Link href={`/student/practice/${activeSessionId}`} className="mt-4 inline-block rounded bg-indigo-600 px-4 py-2 text-white">Start practice</Link></>;
+  return <><p>{diagnosis?.observation ?? "Complete the diagnostic to see your answer-pattern observation."}</p><p className="mt-2">Next step: {diagnosis?.nextStep ?? "Practice finding a common denominator before adding."}</p><Link href={`/student/practice/${activeSessionId}`} className="mt-4 inline-block rounded bg-focus px-4 py-2 text-focus-contrast">Start practice</Link></>;
 }

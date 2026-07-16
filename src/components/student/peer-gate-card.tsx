@@ -88,7 +88,7 @@ export function PeerGateCard({
           <div className="animate-rise rounded-md border border-border-strong bg-elevated p-4 shadow-sm">
             <div className="mb-1 flex items-center gap-2">
               <Badge tone="neutral">Unlocked</Badge>
-              <span className="font-mono text-xs uppercase tracking-wider text-ink-faint">Peer&apos;s first step</span>
+              <span className="text-xs font-semibold text-ink-faint">Peer&apos;s first step</span>
             </div>
             <p className="text-ink">{approachText}</p>
           </div>
@@ -107,7 +107,7 @@ export function PeerGateCard({
               <Badge tone={fullSolutionUnlocked ? "mastered" : "neutral"}>
                 {fullSolutionUnlocked ? "Unlocked" : "Locked"}
               </Badge>
-              <span className="font-mono text-xs uppercase tracking-wider text-ink-faint">Full worked solution</span>
+              <span className="text-xs font-semibold text-ink-faint">Full worked solution</span>
             </div>
             <p className={cn(fullSolutionUnlocked ? "font-semibold text-accent" : "text-ink")}>
               {fullSolutionUnlocked ? fullSolutionText : "Unlocks once you solve the problem correctly."}

@@ -3,7 +3,8 @@ import type { HintLevel as LegacyHintLevel } from "@/lib/types";
 import type { RungAiAdapter } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
-export { createAiAdapter, DEFAULT_AI_MODEL, modelFor, readModelConfig, runtimeAiAdapter } from "@/lib/ai/runtime";
+import { getWorkAnalysisFallback } from "@/lib/ai/runtime";
+export { createAiAdapter, DEFAULT_AI_MODEL, getWorkAnalysisFallback, modelFor, readModelConfig, runtimeAiAdapter } from "@/lib/ai/runtime";
 
 export const fallbackAiAdapter: RungAiAdapter = {
   async diagnoseExplanation(input) {
@@ -23,6 +24,15 @@ export const fallbackAiAdapter: RungAiAdapter = {
   },
   async verifyAttempt(input) {
     return { ...attemptVerificationFallback, promptVersion: input.promptVersion };
+  },
+  async analyzeWork(input) {
+    return {
+      ...getWorkAnalysisFallback(input.imageDataUrl),
+      source: "fallback",
+      promptVersion: input.promptVersion,
+      aiRunId: `fallback-work-analysis-${input.item.id}`,
+      leakCheck: "fallback",
+    };
   },
   async wrapItem(input) {
     return { itemId: input.item.id, prompt: input.item.prompt, source: "fallback", promptVersion: input.promptVersion, aiRunId: `fallback-wrap-${input.item.id}` };

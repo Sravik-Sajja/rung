@@ -27,6 +27,8 @@ export default {
         "focus-hover": "var(--focus-hover)",
         "focus-contrast": "var(--focus-contrast)",
         "focus-soft": "var(--focus-soft)",
+        danger: "var(--danger)",
+        "danger-soft": "var(--danger-soft)",
         mastery: {
           none: "var(--m-none)",
           "none-fg": "var(--m-none-fg)",

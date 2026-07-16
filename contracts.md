@@ -38,6 +38,7 @@ export type HintLevel = "nudge" | "hint" | "guided_step";
 export type AiFeature =
   | "diagnosis_explanation"
   | "tutor_hint"
+  | "work_analysis"
   | "attempt_verification"
   | "item_wrap"
   | "lesson_plan";
@@ -98,6 +99,28 @@ export type TutorHint = AiResultMeta & {
   leakCheck: "passed" | "fallback";
 };
 
+export type WorkAnalysis = AiResultMeta & {
+  observation: string;
+  nextStep: string;
+  checkQuestion: string;
+  imageRead: "not_provided" | "readable" | "unclear";
+  leakCheck: "passed" | "fallback";
+};
+
+/**
+ * Server-only input. `imageDataUrl`, answers, and solution steps are never
+ * returned to the browser or stored in `ai_runs` as raw values.
+ */
+export type AnalyzeWorkInput = {
+  studentId: string;
+  item: SafeItem;
+  writtenWork: string;
+  imageDataUrl?: string;
+  protectedAnswers: string[];
+  protectedSolutionSteps: string[];
+  promptVersion: string;
+};
+
 export type AttemptVerification = AiResultMeta & {
   onTopic: boolean;
   nonTrivial: boolean;
@@ -129,6 +152,8 @@ export interface RungAiAdapter {
     promptVersion: string;
   }): Promise<TutorHint>;
 
+  analyzeWork(input: AnalyzeWorkInput): Promise<WorkAnalysis>;
+
   verifyAttempt(input: {
     studentId: string;
     item: SafeItem;
@@ -145,9 +170,9 @@ export interface RungAiAdapter {
 }
 ```
 
-Model routing is fixed by feature: Luna handles `tutorHint`, `verifyAttempt`, and `wrapItem`; Terra handles `diagnoseExplanation` and teacher lesson-plan generation. The exact deployment identifiers are configured by environment and must be validated against this allow-list at startup. No UI route chooses a model.
+Model routing is fixed by feature: Luna handles `tutorHint`, `analyzeWork`, and `wrapItem`; Terra handles `diagnoseExplanation` and teacher lesson-plan generation. `OPENAI_MODEL_WORK_ANALYSIS` is the optional server-only override for the Luna work-analysis route. The legacy verifier remains behind its old endpoint only while it is being retired. No UI route chooses a model.
 
-The adapter may not alter a deterministic score, mastery decision, or peer-unlock decision. The domain layer rejects diagnosis tags not in `supportedMisconceptionTags`, applies deterministic attempt checks, and maps verifier output to `verified`, `retry`, or `uncertain`.
+The adapter may not alter a deterministic score, mastery decision, practice progression, or content-unlock decision. The domain layer rejects diagnosis tags not in `supportedMisconceptionTags`. Work analysis is coaching only; deterministic `answer_spec` scoring remains the correctness authority.
 
 `SafeItem` deliberately excludes answer-bearing fields. The server performs answer-leak checks only after a tutor result returns.
 
@@ -160,16 +185,17 @@ Every adapter call follows this sequence:
 3. On timeout, provider error, invalid schema, or policy rejection, use only a cache entry matching the feature, stable entity/context, normalized attempt text when applicable, and prompt version.
 4. If no matching verified cache exists, return the typed safe fallback.
 
-For peer verification, the fallback is always `onTopic: false`, `nonTrivial: false` with a domain-mapped `uncertain` status. It must never unlock an approach. Diagnosis fallback may explain only the deterministically selected tag; tutor fallback must be non-answer-revealing; teacher-plan fallback is a seeded plan snapshot.
+Work-analysis fallback returns one safe generic observation, next step, and check question. It never claims whether work is correct, returns a protected answer or solution step, or changes progress. Diagnosis fallback may explain only the deterministically selected tag; tutor fallback must be non-answer-revealing; teacher-plan fallback is a seeded plan snapshot. Legacy peer-verification fallback remains fail-closed while the old endpoint exists.
 
 Phase 0 must seed and export typed fallback objects under the same schemas:
 
 - `mayaDiagnosisFallback`
 - `tutorHintFallbacksByItemAndLevel`
+- `workAnalysisFallback`
 - `mayaAttemptVerificationFallback`
 - `itemWrapFallbacksByItemId`
 
-Every adapter invocation—AI, cache, fallback, or safety rejection—creates an `ai_runs` record and returns that `aiRunId`. The record contains an input hash and metadata only; it must never contain raw attempt text. Adapter implementations may change, but their inputs and outputs may not change without revising this document.
+Every adapter invocation—AI, cache, fallback, or safety rejection—creates an `ai_runs` record and returns that `aiRunId`. The record contains an input hash and metadata only; it must never contain raw attempt text, typed work, photo bytes, or a photo data URL. Adapter implementations may change, but their inputs and outputs may not change without revising this document.
 
 ### Item-wrap invariant
 
@@ -253,6 +279,7 @@ export type PracticeItemCard = {
   position: number;
   status: "pending" | "active" | "missed" | "requeued" | "correct";
   isResurfaced: boolean;
+  /** Legacy response field during peer-gate retirement; the current Student UI ignores it. */
   peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean };
 };
 
@@ -276,6 +303,21 @@ export type TutorHintRequest = {
 
 export type TutorHintResponse = TutorHint & { itemId: string };
 
+/** Multipart form fields. `photo` is optional JPEG/PNG/WebP, max 5 MiB. */
+export type WorkHelpRequest = {
+  studentId: string;
+  itemId: string;
+  writtenWork: string;
+  supportLevel: "hint" | "guided_step";
+  photo?: File;
+};
+
+export type WorkHelpResponse = WorkAnalysis & {
+  itemId: string;
+  supportLevel: "hint" | "guided_step";
+};
+
+/** Legacy-only contract retained while old demo endpoints are removed. */
 export type PeerAttemptRequest = {
   studentId: string;
   itemId: string;
@@ -374,8 +416,8 @@ Track A owns these handlers or equivalent server actions:
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student + `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
 | `GET /api/practice/:sessionId` | authenticated student | `GetPracticeResponse` |
 | `POST /api/tutor/hint` | authenticated student + `TutorHintRequest` | `TutorHintResponse` |
-| `POST /api/peer-attempts` | authenticated student + `PeerAttemptRequest` | `PeerAttemptResponse` |
-| `GET /api/peer-solutions/:itemId` | authenticated student | `GetPeerSolutionResponse` |
+| `POST /api/work-help` | authenticated student + multipart `WorkHelpRequest` | `WorkHelpResponse` |
+| `POST /api/peer-attempts` / `GET /api/peer-solutions/:itemId` | legacy only; must not be called by the current student UI | legacy peer contracts |
 | `GET /api/students/:studentId/mastery?topicId=...` | authenticated student; ID must match actor | `GetStudentMasteryResponse` |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher assigned to class | `ClassDashboardResponse` |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher assigned to group class | `TeacherGroupPlanResponse` |
@@ -389,8 +431,7 @@ Export canonical IDs and fixtures with every contract above. Required fixtures a
 - `mayaDiagnosticCompleteFixture`
 - `mayaPracticeFixture`
 - `mayaTutorHintFixture` for all three hint levels
-- `mayaPeerAttemptFixture`
-- `mayaPeerSolutionFixture` for `locked`, `approach`, and `full_solution` states
+- `mayaWorkHelpFallbackFixture` for missed + hint and missed + guided-step states
 - `fractionsDashboardFixture`
 - `commonDenominatorPlanFixture`
 

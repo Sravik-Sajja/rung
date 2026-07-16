@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
-import { FractionInput } from "@/components/student/fraction-input";
+import { FractionInput, answerModeForSubskill } from "@/components/student/fraction-input";
 import { Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 
@@ -100,6 +100,8 @@ export default function DiagnosticPage() {
         return;
       }
       setRecorded(true);
+    } catch {
+      setError("Rung could not reach the local server. Restart npm run dev, then refresh to begin a new diagnostic.");
     } finally {
       setSubmitting(false);
     }
@@ -152,7 +154,7 @@ export default function DiagnosticPage() {
               >
                 Start the check-in
               </button>
-              {error && <p className="mt-4 text-sm text-red-700">{error}</p>}
+              {error && <p className="mt-4 text-sm text-danger">{error}</p>}
             </div>
           )}
 
@@ -195,12 +197,16 @@ export default function DiagnosticPage() {
                     disabled={recorded}
                     onSubmit={handleSubmit}
                     className="items-center text-center"
+                    defaultMode={answerModeForSubskill(item.subskillId)}
                   />
 
                   {hintUsed ? (
                     // Blue is the support signal in this system (green stays "correct"). The note
                     // flags the consequence honestly: this kind of question comes back afterward.
-                    <div className="animate-rise w-full rounded-lg border border-focus bg-focus-soft p-4 text-left">
+                    // -mt-3 pulls this up against the answer-mode toggle inside FractionInput so
+                    // the two quiet-link affordances read as one grouped cluster, without touching
+                    // the gap-6 the parent column keeps below (toward the feedback/action region).
+                    <div className="animate-rise -mt-3 w-full rounded-lg border border-focus bg-focus-soft p-4 text-left">
                       <p className="text-sm font-semibold text-focus">Hint</p>
                       <p className="mt-1.5 text-sm text-ink">{hintText}</p>
                       <p className="mt-2.5 text-sm text-ink-muted">You&rsquo;ll get extra practice on this kind of question.</p>
@@ -210,7 +216,7 @@ export default function DiagnosticPage() {
                       type="button"
                       onClick={revealHint}
                       disabled={recorded}
-                      className="text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
+                      className="-mt-3 text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
                     >
                       Stuck? Show a hint
                     </button>
@@ -224,7 +230,7 @@ export default function DiagnosticPage() {
                         Got it — your answer is saved.
                       </p>
                     )}
-                    {error && <p className="text-sm text-red-700">{error}</p>}
+                    {error && <p className="text-sm text-danger">{error}</p>}
                   </div>
 
                   {!recorded ? (

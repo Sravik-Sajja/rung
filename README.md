@@ -15,6 +15,7 @@ Skeleton for a middle-school fractions differentiated-instruction prototype. It 
 | --- | --- | --- |
 | `OPENAI_API_KEY` | No, while fallback-only AI is enabled | Server-side OpenAI access |
 | `OPENAI_MODEL` | No | Approved model identifier when live AI is enabled |
+| `OPENAI_MODEL_WORK_ANALYSIS` | No | Optional GPT-5.6 override for the student work-photo help request |
 | `NEXT_PUBLIC_SUPABASE_URL` | No, while the database is not connected | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | No, while the database is not connected | Server-only Supabase access; never expose it to the browser |
 | `DEMO_MODE` | Yes | Set to `true` for the seeded demo experience |
@@ -28,3 +29,7 @@ Skeleton for a middle-school fractions differentiated-instruction prototype. It 
 - Run `npm run reset-demo` to restore the same canonical seed state before a rehearsal.
 
 The current project is intentionally a layout and contract scaffold. The student-facing math, item-generation, AI-safety, and component modules are being built in isolation before database and dashboard integration.
+
+### Optional work-photo help
+
+After a learner has missed an item and used a hint, the practice flow can offer a written-work help request with an optional JPEG, PNG, or WebP photo (5 MiB maximum). The photo is sent only with that request to the server-side GPT-5.6 adapter and is not written to Supabase, local disk, or `ai_runs`; the latter records only a hash and safe structured output. The model may offer one observation, one next step, and one check question. It never scores the answer, changes mastery, or provides a worked solution.

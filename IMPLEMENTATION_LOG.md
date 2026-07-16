@@ -2,6 +2,35 @@
 
 This is the shared factual handoff log for the current prototype. Update it when work merges, when a contract changes, or when a bug is found or resolved. `architecture.md` remains the product and architecture source of truth.
 
+## Current delivery checklist (2026-07-15)
+
+This is the short operational view of what remains. The dated entries below are the detailed factual history. Mark an item complete only after its validation is recorded in a new dated entry.
+
+### Required before a deployable demo
+
+- [ ] **Replace Maya as the primary entry path with a dynamic walkthrough participant.** The visitor enters a first name or nickname, receives a server-generated temporary student identity, and sees their own results in the class dashboard. **Approved fallback:** retain Maya as a secondary “View the prepared Maya walkthrough” link for rehearsals and recovery.
+- [ ] **Wire the rendered hint ladder to `/api/tutor/hint`.** The work-help escalation is mounted after a recorded miss -> requested `hint`/`guided_step` -> another miss, and the visible peer gate is removed. The remaining route wiring must replace the component's temporary local hint copy with the item-specific endpoint response.
+- [ ] **Unify local demo state during the transition to Supabase.** The active diagnostic/practice path uses `demo-learning-store`; legacy peer unlocks still use `demo-flow`. Scoring, mastery, and the visible work-help condition must resolve from one server-owned state source before deployment.
+- [ ] **Run the full Maya rehearsal.** Five-question diagnostic -> evidence-based diagnosis -> selected practice -> safe hint ladder -> recorded miss + work-help response -> deterministic correct answer -> updated mastery visible in the teacher heatmap.
+- [ ] **Run a clean production build.** Stop all concurrent `next dev` processes first, then run `npm.cmd run build` against a clean `.next` directory and record the result.
+- [ ] **Exercise the real Supabase deployment path.** Apply migrations through `005`, run the deterministic seed, configure auth, test RLS as a student and teacher, and set `DEMO_MODE=false` for the deployed environment.
+- [ ] **Verify live AI and failure behavior.** Configure the OpenAI key/model, confirm `ai_runs` logging and cache reads, then rehearse the safe fallback with the model unavailable.
+
+### Recommended after the demo is stable
+
+- [ ] Complete an explicit privacy/consent and deletion review before any real-student work-photo retention is introduced. The current prototype intentionally does not retain work photos.
+- [ ] Add more reviewed content packs beyond Maya's primary fractions journey.
+- [ ] Add CI for tests, type-checking, a clean build, and the canonical end-to-end rehearsal.
+
+### Completed foundation at a glance
+
+- [x] Fraction normalization/scoring, parametric item generation, and validation tests.
+- [x] Canonical Supabase schema/seed, mastery matrix, stable IDs, teacher heatmap/group data.
+- [x] Five-question diagnostic, deterministic diagnosis/practice selection, mastery updates, and one-time resurfacing.
+- [x] AI adapter contracts, Zod validation, cache/fallback behavior, leakage tests, and `ai_runs` integration.
+- [x] Server-only work-help boundary: optional request-only photo analysis, protected-answer leak checks, and safe fallback.
+- [x] Reload-safe local diagnostic/practice sessions plus the primary Maya content pack.
+
 ## 2026-07-14 — baseline before Phase 0
 
 ### Repository state
@@ -276,3 +305,55 @@ Use this template for every meaningful change:
 
 - The student experience is intentionally basic and only demonstrates Maya’s one-item diagnostic. Add the full 4–5 item diagnostic progression after the persistence layer is complete.
 - The flow still relies on shared process-local demo state and browser session storage; replace both with durable Supabase-backed state for deployment.
+
+## 2026-07-15 â€” reload-safe demo sessions and primary Maya content pack
+
+### Completed
+
+- Added `src/lib/student/demo-session-state.ts`, a `globalThis`-backed registry for local diagnostic and practice runs. It keeps a browser's demo session valid across Next.js development module reloads/hot reloads instead of losing the in-memory `Map`.
+- Updated `src/lib/student/demo-learning-store.ts` to use that registry for diagnostic creation, response submission, completion, practice reads, and practice responses. Added a test that simulates a fresh module evaluation and submits against the original diagnostic session ID.
+- Added `src/lib/content/maya-fractions.ts` as the reviewed primary content pack for Maya's journey:
+  - item-specific nudge, hint, and guided-step text for four primary practice items;
+  - deterministic, student-friendly explanation copy for `adds_denominators` and `adds_numerators_and_denominators`;
+  - three fictional, reviewed peer examples that keep an answer-safe first approach separate from the answer-bearing full solution.
+- Connected the content pack to AI fallbacks in `src/lib/ai/adapter.ts` and `src/lib/ai/runtime.ts`; live/cache/fallback contracts remain unchanged, but fallback content now matches the selected item and supported misconception tag.
+- Connected reviewed peer examples to the local peer-solution fallback without changing the deterministic unlock rule.
+- Replaced the primary common-denominator teacher-video placeholder in both `src/lib/demo-data.ts` and `supabase/seed.ts` with a reviewed Khan Academy resource.
+- Added a diagnostic-page fetch-error guard. If the local server is unavailable, the learner sees an actionable message instead of an uncaught browser fetch error.
+
+### Validation
+
+- `npm.cmd test`: 10 files / 40 tests passed.
+- `npx.cmd tsc --noEmit`: passed.
+- Local API rehearsal: created a fresh Maya diagnostic; submitted all five answers; received the `adds_denominators` diagnosis; created the four-item focused practice session; submitted `12` for the first item and advanced to `common-denominator-2`.
+- Local server check after the browser fetch failure: restarted `npm run dev` on port 3000 and verified a fresh diagnostic request and answer submission return successfully.
+
+### Bugs / follow-ups
+
+- **Demo-state boundary:** `globalThis` fixes Next development reloads, but a full Node/Next server restart still clears demo-only sessions. After a restart, refresh the page and begin a new diagnostic. Durable Supabase sessions remain the deployment fix.
+- **Build validation:** `npm.cmd run build` compiled and type-checked successfully, then failed while collecting `/_not-found` because another active Next development server was sharing the workspace `.next` directory. Stop concurrent dev servers and retry the production build before deployment; no source-code build failure is currently indicated.
+- **Content/UI handoff:** the server/API fallbacks now expose item-specific Maya hints and reviewed peer content. Keep the rendered student UI wired to `/api/tutor/hint` and the peer endpoints rather than duplicating generic hint or worked-solution text in components.
+
+## 2026-07-15 — work-based help boundary (peer gate retired from the intended flow)
+
+### Completed
+
+- Added `POST /api/work-help`, which accepts required typed work and an optional JPEG/PNG/WebP photo (maximum 5 MiB) after actor and item validation. The route validates the image signature and keeps accepted image bytes only in request memory long enough to make the model call.
+- Added the `analyzeWork` GPT-5.6 Luna adapter feature, with `OPENAI_MODEL_WORK_ANALYSIS` as an optional server-only override. It returns exactly one observation, one next step, one check question, and an image-read signal.
+- Preserved the trust boundary: GPT-5.6 never scores, updates mastery, changes practice selection, unlocks content, or supplies a final answer/worked solution. `answer_spec` remains the only correctness authority.
+- Added protected-answer, protected-solution-step, generic-answer-phrase, and short standalone-answer leakage checks. A rejected or unavailable model result becomes an answer-safe deterministic fallback.
+- `ai_runs` receives only a one-way hash plus safe structured output/metadata. It never receives raw typed work, image bytes, or a photo data URL.
+- Added the isolated `WorkHelpCard`, including camera-capable optional upload controls, request-only privacy copy, response rendering, and client-side 5 MiB validation.
+- Updated `architecture.md` and `contracts.md`: the intended student flow is now hint -> still stuck -> work-based help, while old peer routes/data are legacy compatibility only.
+
+### Validation
+
+- `npm.cmd test`: 11 test files / 52 tests passed, including 7 work-help-route tests and 12 AI-runtime tests.
+- `npx.cmd tsc --noEmit`: passed.
+- `git diff --check`: passed.
+- Live provider validation is still pending an environment with `OPENAI_API_KEY`; the live/cache/fallback behavior is covered through the injected client tests.
+
+### Bugs / follow-ups
+
+- **Hint-route handoff:** `src/components/student/persisted-practice-loop.tsx` now mounts `WorkHelpCard` only after a recorded miss, a requested `hint`/`guided_step`, and another missed response. Its existing hint text is still temporary local copy; wire it to `/api/tutor/hint` before the deployable rehearsal.
+- **No retention by design:** this prototype processes work photos in memory. Do not add database or Storage persistence without a separate consent, retention, deletion, and access-control decision.

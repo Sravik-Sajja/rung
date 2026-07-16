@@ -51,6 +51,47 @@ export const attemptVerificationSchema = metaSchema.extend({
 });
 export type AttemptVerification = z.infer<typeof attemptVerificationSchema>;
 
+/**
+ * A deliberately coarse signal so a photo can help a learner without turning
+ * handwriting recognition into a source of scoring evidence.
+ */
+export const imageReadSchema = z.enum(["not_provided", "readable", "unclear"]);
+export type ImageRead = z.infer<typeof imageReadSchema>;
+
+/**
+ * Low-stakes help after the learner is still stuck. The response is bounded to
+ * one observation, one next step, and one check question; it never includes a
+ * score, a final answer, or a worked solution.
+ */
+export const workAnalysisSchema = metaSchema.extend({
+  observation: z.string().trim().min(1).max(280),
+  nextStep: z.string().trim().min(1).max(280),
+  checkQuestion: z.string().trim().min(1).max(200),
+  imageRead: imageReadSchema,
+  leakCheck: z.enum(["passed", "fallback"]),
+});
+export type WorkAnalysis = z.infer<typeof workAnalysisSchema>;
+
+/**
+ * The image is accepted only at the server-side adapter boundary. It is never
+ * persisted to ai_runs; the runtime records only a one-way hash in its cache
+ * key and safe structured output.
+ */
+export const analyzeWorkInputSchema = z.object({
+  studentId: z.string().min(1),
+  item: safeItemSchema,
+  writtenWork: z.string().trim().min(1).max(4_000),
+  imageDataUrl: z.string()
+    // A 5 MiB binary upload expands to roughly 6.99 MiB as base64 plus its data-URL prefix.
+    .max(7_100_000)
+    .regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=\r\n]+$/, "Use a JPEG, PNG, or WebP image data URL.")
+    .optional(),
+  protectedAnswers: z.array(z.string().min(1).max(200)).min(1).max(16),
+  protectedSolutionSteps: z.array(z.string().min(1).max(500)).max(24),
+  promptVersion: z.string().min(1),
+});
+export type AnalyzeWorkInput = z.infer<typeof analyzeWorkInputSchema>;
+
 export const parametricItemSchema = z.object({
   id: z.string().min(1),
   subskillId: z.string().min(1),
@@ -71,5 +112,6 @@ export interface RungAiAdapter {
   diagnoseExplanation(input: { studentId: string; assignmentId: string; gradeBand: string; targetSubskillId: string; supportedMisconceptionTags: string[]; evidence: DiagnosisEvidence[]; promptVersion: string }): Promise<DiagnosisExplanation>;
   tutorHint(input: { studentId: string; item: SafeItem; attempt: string; level: HintLevel; promptVersion: string }): Promise<TutorHint>;
   verifyAttempt(input: { studentId: string; item: SafeItem; attemptText: string; explanation: string; normalizedAttemptText: string; promptVersion: string }): Promise<AttemptVerification>;
+  analyzeWork(input: AnalyzeWorkInput): Promise<WorkAnalysis>;
   wrapItem(input: { item: ParametricItem; promptVersion: string }): Promise<ItemWrap>;
 }

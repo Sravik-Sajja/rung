@@ -4,28 +4,66 @@ import { StudentShell } from "@/components/student/surface/student-shell";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui";
 import { demoStudents } from "@/lib/demo-data";
 
+// Decorative ladder rungs for the side margins on very wide screens — mirrors the diagnostic
+// intro's motif so this "step zero" screen feels like the same composition. Purely visual —
+// aria-hidden. Duplicated locally (not imported) per this page's file-ownership boundary.
+const RUNG_MOTIF_OPACITIES = [0.16, 0.3, 0.45, 0.62, 0.8];
+
+function RungMotif({ side }: { side: "left" | "right" }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-y-0 hidden flex-col justify-center gap-10 xl:flex 2xl:gap-12 ${
+        side === "left" ? "left-2 2xl:left-10" : "right-2 2xl:right-10"
+      }`}
+    >
+      {RUNG_MOTIF_OPACITIES.map((opacity, index) => (
+        <span
+          key={index}
+          className="h-1 w-12 rounded-full bg-border-strong 2xl:w-16"
+          style={{ opacity }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function DemoPage() {
   const [maya, ...rest] = demoStudents;
 
   return (
-    <StudentShell exitHref="/">
-      <section className="flex flex-1 flex-col gap-10">
-        <div className="max-w-lg animate-rise">
-          <Eyebrow className="mb-2">Prototype walkthrough</Eyebrow>
-          <h1 className="text-balance text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
-            Let&rsquo;s find your next climb.
-          </h1>
-          <p className="mt-4 text-lg text-ink-muted">
-            Every learner starts on a different rung — Rung meets you on yours. This walkthrough
-            follows Maya Chen through a quick check-in, a focused practice set, and an honest look
-            at what she&rsquo;s climbed so far.
-          </p>
-        </div>
+    <StudentShell exitHref="/" size="wide">
+      {/* One centered composition — headline above, the Maya card as the single lit focal
+          object below — so this screen reads as the same house style as the diagnostic intro
+          it leads into, rather than left-anchored content floating in a wide void. */}
+      <section className="relative flex flex-1 items-center justify-center">
+        {/* Soft spark-gold pool of light behind the card so the focal object sits in a lit spot
+            on the canvas instead of floating on one flat wash. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[26rem] w-full max-w-[52rem] -translate-x-1/2 -translate-y-1/2 opacity-70 blur-3xl"
+          style={{ background: "radial-gradient(closest-side, var(--spark-soft), transparent)" }}
+        />
+        <RungMotif side="left" />
+        <RungMotif side="right" />
 
-        {/* Primary hero CTA: bg-elevated + shadow-lg makes this the one thing that visibly floats
-            off the bg-bg canvas, so the start action is unmistakably the focal point. */}
-        <Card className="animate-rise flex flex-col gap-6 border-border-strong bg-elevated p-6 shadow-lg sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
+        <div className="relative mx-auto w-full max-w-2xl py-8">
+          <div className="animate-rise mx-auto max-w-lg text-center">
+            <Eyebrow className="mb-3">Prototype walkthrough</Eyebrow>
+            <h1 className="text-balance text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
+              Let&rsquo;s find your next climb.
+            </h1>
+            <p className="mt-4 text-pretty text-lg text-ink-muted">
+              Every learner starts on a different rung — Rung meets you on yours. This walkthrough
+              follows Maya Chen through a quick check-in, a focused practice set, and an honest look
+              at what she&rsquo;s climbed so far.
+            </p>
+          </div>
+
+          {/* Primary hero CTA: bg-elevated + shadow-lg + rounded-2xl makes this the one thing
+              that visibly floats off the bg-bg canvas, matching the diagnostic card so the start
+              action is unmistakably the single focal point. */}
+          <Card className="animate-rise mt-10 flex flex-col items-center gap-5 rounded-2xl border-border-strong bg-elevated p-8 text-center shadow-lg">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-border-strong bg-accent-soft font-mono text-base font-bold text-accent">
               MC
             </div>
@@ -33,23 +71,21 @@ export default function DemoPage() {
               <p className="text-xl font-bold text-ink">{maya.displayName}</p>
               <p className="mt-0.5 text-sm text-ink-muted">Fractions unit &middot; ready when you are</p>
             </div>
-          </div>
-          <Link href="/student/diagnostic" className={buttonClasses("focus", "lg")}>
-            Start the climb
-          </Link>
-        </Card>
+            <Link href="/student/diagnostic" className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+              Start the climb
+            </Link>
+          </Card>
 
-        <div>
-          <p className="mb-3 font-mono text-xs uppercase tracking-wider text-ink-faint">
-            Other seeded learners in this class
-          </p>
-          <ul className="flex flex-wrap gap-2">
-            {rest.map((student) => (
-              <li key={student.id}>
-                <Badge tone="neutral">{student.displayName}</Badge>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-8 text-center">
+            <p className="mb-3 text-sm text-ink-muted">Other learners in this class</p>
+            <ul className="flex flex-wrap justify-center gap-2">
+              {rest.map((student) => (
+                <li key={student.id}>
+                  <Badge tone="neutral">{student.displayName}</Badge>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
     </StudentShell>

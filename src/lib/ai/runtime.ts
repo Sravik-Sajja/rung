@@ -3,9 +3,11 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { analyzeWorkInputSchema } from "@/lib/ai/contracts";
 import type {
   AiSource,
   AttemptVerification,
+  AnalyzeWorkInput,
   DiagnosisExplanation,
   HintLevel,
   ItemWrap,
@@ -13,12 +15,13 @@ import type {
   RungAiAdapter,
   SafeItem,
   TutorHint,
+  WorkAnalysis,
 } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
-import { containsGenericTutorLeak } from "@/lib/ai/leakage";
+import { containsAnswerLeak, containsGenericTutorLeak } from "@/lib/ai/leakage";
 
-export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "item_wrap";
+export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "item_wrap";
 export type AiRunStatus = "valid" | "live_failed" | "cache_hit" | "fallback";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
@@ -28,6 +31,7 @@ export interface AiModelConfig {
   diagnosis_explanation?: string;
   tutor_hint?: string;
   attempt_verification?: string;
+  work_analysis?: string;
   item_wrap?: string;
 }
 
@@ -53,6 +57,8 @@ export interface StructuredCompletionRequest {
   model: string;
   system: string;
   user: string;
+  /** Optional private image input used only for a single vision completion. */
+  imageDataUrl?: string;
   schema: z.ZodTypeAny;
   schemaName: string;
 }
@@ -82,6 +88,13 @@ const attemptPayloadSchema = z.object({
   nonTrivial: z.boolean(),
   reason: z.string().min(1),
   confidence: z.number().min(0).max(1),
+});
+
+const workAnalysisPayloadSchema = z.object({
+  observation: z.string().trim().min(1).max(280),
+  nextStep: z.string().trim().min(1).max(280),
+  checkQuestion: z.string().trim().min(1).max(200),
+  imageRead: z.enum(["not_provided", "readable", "unclear"]),
 });
 
 const itemWrapPayloadSchema = z.object({ prompt: z.string().min(1) });
@@ -173,6 +186,82 @@ async function resolveStructuredPayload<Payload>(input: {
     outputJson: payload,
   });
   return { payload, source: "fallback", aiRunId };
+}
+
+/**
+ * Safe deterministic help when vision is unavailable, unreadable, or returns
+ * content outside the low-stakes tutoring boundary. It intentionally does not
+ * identify an answer or transcribe the learner's work.
+ */
+export function getWorkAnalysisFallback(imageDataUrl?: string) {
+  return {
+    observation: imageDataUrl
+      ? "I could not reliably read enough of the photo to give a specific correction."
+      : "Start with one fraction step you can check before combining anything.",
+    nextStep: "Write one equivalent-fraction or common-denominator step, then compare it with the original problem.",
+    checkQuestion: "What value must stay the same when you rewrite a fraction?",
+    imageRead: imageDataUrl ? "unclear" as const : "not_provided" as const,
+  };
+}
+
+/**
+ * ai_runs gets a one-way cache key only. Never pass raw typed work or a data
+ * URL into this hash object, because the record must not retain either value.
+ */
+function workAnalysisInputHash(input: AnalyzeWorkInput): string {
+  return hashInput({
+    studentIdHash: hashInput(input.studentId),
+    item: input.item,
+    writtenWorkHash: hashInput(input.writtenWork),
+    imageHash: input.imageDataUrl ? hashInput(input.imageDataUrl) : null,
+    protectedAnswerHashes: input.protectedAnswers.map(hashInput),
+    protectedSolutionStepHashes: input.protectedSolutionSteps.map(hashInput),
+    promptVersion: input.promptVersion,
+  });
+}
+
+function containsWorkAnalysisLeak(
+  payload: z.infer<typeof workAnalysisPayloadSchema>,
+  input: Pick<AnalyzeWorkInput, "protectedAnswers" | "protectedSolutionSteps">,
+): boolean {
+  return [payload.observation, payload.nextStep, payload.checkQuestion].some((text) =>
+    containsGenericTutorLeak(text)
+    || containsAnswerLeak(text, input.protectedAnswers, input.protectedSolutionSteps)
+    || containsStandaloneProtectedAnswer(text, input.protectedAnswers),
+  );
+}
+
+/**
+ * The shared guard intentionally ignores values shorter than three characters
+ * to avoid broad false positives in generic hints. Work analysis has the full
+ * protected answer list, so it adds a stricter standalone-token check for
+ * answers such as `12` while avoiding matches inside `112`, `12/5`, or `0.12`.
+ */
+function containsStandaloneProtectedAnswer(text: string, protectedAnswers: readonly string[]): boolean {
+  const candidate = text.toLowerCase();
+
+  return protectedAnswers.some((answer) => {
+    const protectedAnswer = answer.trim().replace(/\s/g, "").toLowerCase();
+    if (!protectedAnswer) return false;
+
+    let startIndex = 0;
+    while (startIndex < candidate.length) {
+      const index = candidate.indexOf(protectedAnswer, startIndex);
+      if (index < 0) return false;
+
+      const before = candidate[index - 1];
+      const after = candidate[index + protectedAnswer.length];
+      const beforeIsDecimal = before === ".";
+      const afterIsDecimal = after === "." && /\d/.test(candidate[index + protectedAnswer.length + 1] ?? "");
+      const beforeIsBoundary = !before || (!/[0-9a-z/]/i.test(before) && !beforeIsDecimal);
+      const afterIsBoundary = !after || (!/[0-9a-z/]/i.test(after) && !afterIsDecimal);
+
+      if (beforeIsBoundary && afterIsBoundary) return true;
+      startIndex = index + protectedAnswer.length;
+    }
+
+    return false;
+  });
 }
 
 /** Creates the adapter used by domain code. It is server-only by construction. */
@@ -293,6 +382,56 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       } satisfies AttemptVerification;
     },
 
+    async analyzeWork(rawInput) {
+      const input = analyzeWorkInputSchema.parse(rawInput);
+      const result = await resolveStructuredPayload({
+        feature: "work_analysis",
+        promptVersion: input.promptVersion,
+        inputHash: workAnalysisInputHash(input),
+        model: modelFor("work_analysis", models),
+        schema: workAnalysisPayloadSchema,
+        completionClient,
+        runStore,
+        request: {
+          schemaName: "work_analysis",
+          system: [
+            "You are a careful middle-school fraction coach helping after a learner is still stuck.",
+            "This is low-stakes work analysis only; never score the work, unlock content, infer mastery, or claim whether an answer is correct.",
+            "Return a concise observation, one next step, one check question, and imageRead (not_provided, readable, or unclear).",
+            "Do not state a final answer, complete a calculation, provide a worked solution, or reveal an answer key.",
+            "Do not transcribe, quote, or repeat the learner's typed or handwritten work. Describe a pattern instead.",
+            "Use supportive, plain language and focus on one actionable next move. If the image is not readable, set imageRead to unclear.",
+          ].join(" "),
+          user: JSON.stringify({
+            item: input.item,
+            writtenWork: input.writtenWork,
+            imageIncluded: Boolean(input.imageDataUrl),
+          }),
+          imageDataUrl: input.imageDataUrl,
+        },
+        validate: (payload) => {
+          if (!input.imageDataUrl && payload.imageRead !== "not_provided") {
+            throw new Error("Work analysis reported an image state without an image.");
+          }
+          if (input.imageDataUrl && payload.imageRead === "not_provided") {
+            throw new Error("Work analysis did not report a supplied image state.");
+          }
+          if (containsWorkAnalysisLeak(payload, input)) {
+            throw new Error("Work analysis contained protected-answer or tutor leakage.");
+          }
+        },
+        fallback: () => getWorkAnalysisFallback(input.imageDataUrl),
+      });
+
+      return {
+        ...result.payload,
+        source: result.source,
+        promptVersion: input.promptVersion,
+        aiRunId: result.aiRunId,
+        leakCheck: result.source === "fallback" ? "fallback" : "passed",
+      } satisfies WorkAnalysis;
+    },
+
     async wrapItem(input) {
       const result = await resolveStructuredPayload({
         feature: "item_wrap",
@@ -334,11 +473,19 @@ export function createConfiguredCompletionClient(): StructuredCompletionClient |
   const client = new OpenAI({ apiKey, maxRetries: 0, timeout: 15_000 });
   return {
     async complete(input) {
+      // Chat Completions supports a base64 image data URL alongside text. The
+      // image lives only in this request; it is never copied into ai_runs.
+      const userContent = input.imageDataUrl
+        ? [
+          { type: "text" as const, text: input.user },
+          { type: "image_url" as const, image_url: { url: input.imageDataUrl, detail: "high" as const } },
+        ]
+        : input.user;
       const completion = await client.beta.chat.completions.parse({
         model: input.model,
         messages: [
           { role: "system", content: input.system },
-          { role: "user", content: input.user },
+          { role: "user", content: userContent },
         ],
         response_format: zodResponseFormat(input.schema, input.schemaName),
       });
@@ -355,6 +502,7 @@ export function readModelConfig(env: NodeJS.ProcessEnv = process.env): AiModelCo
     diagnosis_explanation: env.OPENAI_MODEL_DIAGNOSIS,
     tutor_hint: env.OPENAI_MODEL_TUTOR_HINT,
     attempt_verification: env.OPENAI_MODEL_ATTEMPT_VERIFICATION,
+    work_analysis: env.OPENAI_MODEL_WORK_ANALYSIS,
     item_wrap: env.OPENAI_MODEL_ITEM_WRAP,
   };
 }

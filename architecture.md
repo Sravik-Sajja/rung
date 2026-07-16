@@ -1,13 +1,13 @@
 # Rung MVP Architecture
 
 **Status:** Source of truth for the deployable post-hackathon MVP
-**Last updated:** 2026-07-14  
+**Last updated:** 2026-07-15
 **Delivery target:** 2026-07-21  
 **Team:** 2 builders
 
 ## 1. Purpose
 
-Rung is a differentiated-instruction platform for middle-school math. In this MVP, a teacher-assigned fractions diagnostic identifies a student's missing sub-skills, assigns focused practice, offers non-answer-revealing tutor help, gates peer worked examples behind a genuine attempt, and turns class data into a teacher-ready small-group plan.
+Rung is a differentiated-instruction platform for middle-school math. In this MVP, a teacher-assigned fractions diagnostic identifies a student's missing sub-skills, assigns focused practice, offers non-answer-revealing tutor help, gives a still-stuck learner one bounded work-based coaching step, and turns class data into a teacher-ready small-group plan.
 
 This document is the technical and product boundary for the build. When implementation choices conflict with this document, follow this document unless it is deliberately revised. New work belongs in the MVP only when it strengthens the end-to-end demo described in Section 4.
 
@@ -35,7 +35,7 @@ These are intentional implementation choices for this MVP. A builder should not 
 | Shared UI components | Small local component set; do not introduce a component library unless it accelerates a specific screen |
 | Heatmap | Accessible custom CSS grid; avoid a charting dependency for this narrow matrix |
 | Supabase client | Production browser client uses the anon key and authenticated session only; server modules use the user session for normal requests and the service role only for seed/admin work |
-| OpenAI client | Official OpenAI JavaScript/TypeScript SDK, called only by the server-side AI adapter |
+| OpenAI client | Official OpenAI JavaScript/TypeScript SDK, called only by the server-side AI adapter. `OPENAI_MODEL_WORK_ANALYSIS` may override the approved GPT-5.6 Luna route for work analysis; otherwise it inherits the approved default model. |
 | Runtime validation | Zod schemas shared between API handlers and client form boundaries |
 | Unit/integration test runner | Vitest |
 | Browser end-to-end testing | Optional Playwright smoke test only after the core flow is complete |
@@ -54,7 +54,7 @@ The MVP must make this claim credibly:
 - Diagnostic scoring and sub-skill diagnosis from answer patterns.
 - A personalized, ordered practice set drawn from a validated bank.
 - A three-level AI tutor hint ladder that does not give the final answer.
-- Attempt-gated peer worked examples using seeded solutions.
+- One work-based help card after a recorded missed response and a learner-requested `hint` or `guided_step`; it offers a bounded coaching next step, not an answer.
 - A seeded demo class, mastery records, teacher heatmap, and automatic groups.
 - One generated mini-lesson plan for a selected group.
 - Pre-vetted, pre-seeded video recommendations.
@@ -81,7 +81,7 @@ The journey maps to a <3-minute script with the timing budget and AI-narration h
 | 1. Select the seeded student **Maya Chen** from the demo roster; Maya completes a five-question fixed fractions diagnostic. | ~40s | Diagnostic, one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
 | 2. The system reports a specific finding: *Maya adds fractions without first finding a common denominator* — inferred from **which** wrong answers she chose, not just that she missed them. | (in ~40s) | Diagnosis screen | Deterministic rules select the supported tag; GPT-5.6 renders it in student-friendly language (§8) |
 | 3. Maya receives practice for the prerequisite and uses the tutor's nudge → hint → guided-step ladder on a hard item without being handed the answer. | ~40s | Practice + hint ladder | GPT-5.6 generates Socratic laddered hints; leak check keeps the answer hidden |
-| 4. Maya submits a meaningful attempt. The peer approach unlocks; the complete worked solution stays locked until Maya solves the item correctly. | ~30s | Attempt gate → peer approach | GPT-5.6 verifies the attempt is genuine and on-topic before unlocking |
+| 4. After a recorded miss and a requested `hint` or `guided_step`, Maya uses **Show your work**: she types what she tried and may add a photo. Rung returns one observation, one next step, and one check question without telling her whether she is correct. | ~30s | Work-based help card | GPT-5.6 Luna reads only the request in memory; server leak checks keep the answer hidden and deterministic scoring remains authoritative |
 | 5. Switch to the teacher dashboard: the heatmap shows several students share the common-denominator gap; select that group; Rung shows a 15–20 minute next-day mini-lesson with a matched practice set and one verified video. | ~45s | Teacher heatmap → group → plan | GPT-5.6 drafted the grouped mini-lesson; the video was pre-vetted by GPT-5.6 (§7); Codex built the dashboard and grouping |
 
 The polished path must use seeded data and cached results. The demo must not depend on a live web search or on any model call for a result that is already required to appear.
@@ -98,14 +98,14 @@ flowchart LR
   M --> O["OpenAI API"]
   R --> V["Math & policy validators"]
   V --> DB
-  DB --> C["Seeded curriculum, roster, peer examples, videos"]
+  DB --> C["Seeded curriculum, roster, validated items, videos"]
 ```
 
 ### Architectural principle
 
 **The model suggests; deterministic application code decides what becomes visible or stored.**
 
-The model can diagnose an error pattern, write hints, assess whether an attempt addresses the problem, and draft a lesson plan. It may not be the sole authority for answer correctness, item validity, permissions, or which content is unlocked. Those decisions are made from database records and deterministic validation code.
+The model can diagnose an error pattern, write hints, analyze learner-supplied work for one next move, and draft a lesson plan. It may not be the authority for answer correctness, item validity, permissions, mastery, or content progression. Those decisions are made from database records and deterministic validation code.
 
 ## 6. System boundaries
 
@@ -113,10 +113,10 @@ The model can diagnose an error pattern, write hints, assess whether an attempt 
 
 Responsibilities:
 
-- Render the student diagnostic, practice, tutor, and peer-example views.
+- Render the student diagnostic, practice, tutor, and conditional work-based help view.
 - Render the teacher heatmap, groups, plan, and video recommendation.
 - Keep transient interface state local: current question, active hint level, loading/error state.
-- Submit answers and attempts to server endpoints; never call Supabase with privileged credentials or call OpenAI directly.
+- Submit answers, tutor requests, and work-help requests to server endpoints; never call Supabase with privileged credentials or call OpenAI directly.
 
 The MVP may use the Next.js App Router with server components for read-heavy dashboard pages and client components only where interaction is needed.
 
@@ -125,15 +125,15 @@ The MVP may use the Next.js App Router with server components for read-heavy das
 Responsibilities:
 
 - Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In `DEMO_MODE`, resolve an isolated, allow-listed demo identity rather than accepting arbitrary client IDs.
-- Coordinate scoring, mastery updates, unlock decisions, and model calls.
+- Coordinate scoring, mastery updates, practice progression, and model calls.
 - Validate request shape and return stable, typed responses.
 - Log model request metadata and failures without storing secrets.
 
-All mutation and model workflows cross this boundary. Browser code must not decide that an answer is correct or a peer solution may be unlocked.
+All mutation and model workflows cross this boundary. Browser code must not decide that an answer is correct, that mastery changes, or that model output is safe to show.
 
 ### Data: Supabase Postgres
 
-Supabase is the canonical store for curriculum, users, attempts, mastery, groups, cached model outputs, peer examples, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
+Supabase is the canonical store for curriculum, users, scored responses, mastery, groups, safe cached model outputs, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
 
 Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` is disabled in production and may only select pre-seeded, fictional allow-listed identities. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
 
@@ -143,7 +143,7 @@ One server-side module owns all OpenAI requests. It receives structured inputs a
 
 The adapter is responsible for:
 
-- Model selection and API request construction: GPT-5.6 Luna for routine tutor, attempt-verification, and item-wrap calls; GPT-5.6 Terra for lower-volume diagnosis explanations and teacher lesson-plan drafts. Exact approved model IDs are environment-configured and allow-listed.
+- Model selection and API request construction: GPT-5.6 Luna for routine tutor, work-analysis, and item-wrap calls; GPT-5.6 Terra for lower-volume diagnosis explanations and teacher lesson-plan drafts. `OPENAI_MODEL_WORK_ANALYSIS` is an optional server-only override for the approved Luna work-analysis route. Exact approved model IDs are environment-configured and allow-listed.
 - Versioned prompt templates.
 - Structured output parsing and schema validation.
 - Timeouts, error handling, and a cached/seeded fallback for the demo.
@@ -153,9 +153,9 @@ Use the currently approved OpenAI model configured by an environment variable ra
 
 ### Cache and fallback policy
 
-Option B is required: **live model call -> verified cache -> safe deterministic fallback**. The adapter calls the configured GPT-5.6 model first, validates the structured result and policy checks, then stores it as a verified cache entry. On timeout, API failure, invalid schema, or unsafe output, it uses only a matching verified cache entry; if none exists, it returns a feature-specific safe fallback. Tutor returns a non-answer-revealing deterministic hint; diagnosis returns a seeded explanation of deterministic evidence; lesson planning returns a seeded plan; peer verification returns `uncertain` and does not unlock. The UI may identify the response source but must not present a failed live call as model-generated.
+Option B is required: **live model call -> verified cache -> safe deterministic fallback**. The adapter calls the configured GPT-5.6 model first, validates the structured result and policy checks, then stores it as a verified cache entry. On timeout, API failure, invalid schema, or unsafe output, it uses only a matching verified cache entry; if none exists, it returns a feature-specific safe fallback. Tutor returns a non-answer-revealing deterministic hint; work analysis returns a generic observation, one next move, and one check question; diagnosis returns a seeded explanation of deterministic evidence; lesson planning returns a seeded plan. The UI may identify the response source but must not present a failed live call as model-generated.
 
-Cache AI outputs by `feature`, the relevant stable entity (such as `item_id` or `teacher_group_id`), and `prompt_version`. Never use a cache entry created for a different item, sub-skill, or learner context. Attempt verification, whose input includes free-typed text, is additionally keyed by the normalized attempt text (see §9.3 demo reliability).
+Cache AI outputs by `feature`, the relevant stable entity (such as `item_id` or `teacher_group_id`), and `prompt_version`. Never use a cache entry created for a different item, sub-skill, or learner context. Work analysis additionally keys on one-way hashes of the typed work and optional image, never their raw values (see §9.3).
 
 ## 7. Domain model
 
@@ -191,9 +191,9 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `mastery` | Latest mastery status per student/sub-skill | `student_id`, `subskill_id`, `level`, `evidence_count`, `last_evaluated_at` |
 | `practice_sessions` | Generated/selected practice sequence | `id`, `student_id`, `topic_id`, `status`, `diagnosis_snapshot` |
 | `practice_session_items` | Ordered selected practice items | `practice_session_id`, `item_id`, `position`, `status` |
-| `attempt_submissions` | Text/numeric work submitted for peer gate | `id`, `student_id`, `item_id`, `attempt_text`, `verification_status`, `verification_reason` |
-| `peer_solutions` | Curated, seeded worked examples | `id`, `item_id`, `author_alias`, `approach_text`, `full_solution`, `is_vetted` |
-| `peer_unlocks` | Explicit gate state | `student_id`, `item_id`, `approach_unlocked_at`, `full_solution_unlocked_at` |
+| `attempt_submissions` | **Legacy compatibility only:** former peer-gate attempt records; not used by the current work-help flow | `id`, `student_id`, `item_id`, `attempt_text`, `verification_status`, `verification_reason` |
+| `peer_solutions` | **Legacy compatibility only:** former curated worked examples; not rendered in the current student flow | `id`, `item_id`, `author_alias`, `approach_text`, `full_solution`, `is_vetted` |
+| `peer_unlocks` | **Legacy compatibility only:** former peer-gate state; not read by the current student flow | `student_id`, `item_id`, `approach_unlocked_at`, `full_solution_unlocked_at` |
 | `video_recommendations` | Pre-verified instructional videos | `id`, `subskill_id`, `title`, `provider`, `url`, `verification_note`, `is_active` |
 | `teacher_groups` | Computed current grouping projection; optionally persisted for a selected plan | `id`, `class_id`, `subskill_id`, `label`, `generated_at` |
 | `teacher_group_members` | Membership captured when a teacher selects/persists a group plan | `teacher_group_id`, `student_id` |
@@ -206,7 +206,7 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 
 `distractor_map` is the mechanism behind the product's core claim: diagnosis reads the *error pattern in wrong answers*, not just right/wrong. It maps each seeded wrong answer choice (or a recognizable wrong-answer form for free-entry items) to a predefined misconception tag — for example, `"3/7" → adds_numerators_and_denominators`. Diagnostic items must seed distractors whose selection is diagnostic, so that *which* wrong answer a student picks names the misconception. Misconception tags are drawn from a small fixed vocabulary aligned to the sub-skills in §7.
 
-**Attempt retention.** `attempt_submissions.attempt_text` is retained for 30 days from submission, then deleted or irreversibly redacted by a scheduled server-side job. `ai_runs` stores an input hash and structured status/metadata, never raw student attempt text. Application logs must not include raw attempts.
+**Work-help privacy.** The current work-help flow does not create an attempt/work row. Typed work and an optional photo are processed only in request memory; they are never written to Supabase, `ai_runs`, application logs, cache values, or the HTTP response. `ai_runs` stores only one-way hashes and safe structured output/metadata. Legacy `attempt_submissions` retention remains a migration concern for any existing legacy records, not a reason to persist new work-help input.
 
 ### Schema delivery priority
 
@@ -215,7 +215,6 @@ The schema above describes the desired canonical model. The following tables are
 - `students`, `classes`, `class_enrollments`, `topics`, `subskills`, `items`
 - `assignments`, `assignment_items`, `student_responses`, `mastery`
 - `practice_sessions`, `practice_session_items`
-- `attempt_submissions`, `peer_solutions`, `peer_unlocks`
 - `video_recommendations`
 - `ai_runs`
 
@@ -307,22 +306,28 @@ Before rendering a model response, run an answer-leak check. For this MVP it can
 
 The tutor never accepts the model's assessment of mathematical correctness. Student answers are scored by `answer_spec`.
 
-### 9.3 Attempt-gated peer solution
+### 9.3 Work-based help after a missed response
 
-1. Student submits an attempt and a short “What did you try?” explanation.
-2. Server rejects empty, repeated-character, obviously unrelated, or too-short attempts deterministically.
-3. The AI verifier receives the item, answer, and explanation and returns structured fields: `on_topic`, `non_trivial`, `reason`, `confidence`.
-4. Server unlocks the peer **approach** only if the deterministic minimum floor passes and the verified live/cache model result has both booleans true. A live failure without a matching verified cache is `uncertain` and fails closed; it never unlocks.
-5. Server unlocks the full worked solution only after deterministic answer scoring is correct.
-6. Any verifier failure returns a constructive retry prompt, never a judgment of student motivation.
+This replaces the retired peer worked-example gate with individual, bounded coaching. A learner may receive one work-based help response only when both of these local flow conditions are true:
 
-The UI must label this feature “See a peer’s approach” and explain the gate. Do not call it answer sharing.
+1. The server has deterministically scored and recorded a response for the current item as missed.
+2. The learner has actively requested a `hint` or `guided_step` for that same item and is still stuck.
 
-**Demo reliability for the live attempt.** The presenter's attempt text at step 5 of §4 is typed live, so its verification cannot be cache-hit by `item_id` alone. To keep this — the demo's riskiest 30 seconds — from stalling:
+The card is titled **“Still stuck? Show your work.”** It has one required typed field, “What have you tried?”, and one optional photo field. The typed field asks for a first step, equation, diagram description, or strategy; it is not an answer field and never becomes scoring evidence. The card is not shown after a correct response, after a `nudge` alone, or as a replacement for deterministic answer checking.
 
-- Seed the exact rehearsed attempt text for Maya's gated item and pre-cache its verification result keyed by `(item_id, normalized_attempt_text, prompt_version)`. Rehearse with that exact text.
-- If the live attempt does not match the seeded text and the verifier call times out or errors, the deterministic pre-checks (non-empty, on-length, references the item's numbers) still run, and a documented **demo-mode** setting may treat a deterministically-valid attempt as verified rather than blocking. This is a demo affordance, disabled outside demo mode, and must be logged.
-- The `verification_status = uncertain → do not unlock` rule in §10 applies to real use; demo mode's fallback resolves the contradiction between that rule and the pre-cache guarantee in §15.
+`POST /api/work-help` is a server-authenticated multipart request. It sends `studentId`, `itemId`, `writtenWork`, and `supportLevel` (`hint` or `guided_step`), plus an optional `photo`. The route accepts only JPEG, PNG, or WebP uploads no larger than 5 MiB. It validates content type and image signature, converts an accepted image to an in-memory data URL only long enough to call the adapter, and does not write it to disk, Supabase Storage, database rows, logs, cache values, or the response.
+
+The adapter sends the current safe item context, typed work, and optional image to GPT-5.6 Luna. Server-only protected answer values and solution-step strings are used only for answer-leak checks. The returned `WorkAnalysis` is bounded to:
+
+- `observation` — a supportive pattern the learner can examine;
+- `nextStep` — one actionable next move; and
+- `checkQuestion` — one question the learner can answer to continue.
+
+The adapter may also report whether the image was `not_provided`, `readable`, or `unclear`. It must never score the work, update mastery, alter practice sequencing, unlock content, claim that an answer is correct or incorrect, return a final answer/full solution, quote the learner's work, or persist raw work/photo data. Deterministic `answer_spec` scoring remains the only correctness authority.
+
+Before a result is shown, the server rejects any output that contains a protected answer, solution-step text, or generic answer-revealing language. The live/cache/fallback policy in §6 applies: a cache key contains only one-way hashes of work/image input, and the fallback gives an answer-safe generic next step. The user can retry; a model failure never changes their score or progress.
+
+**Legacy compatibility.** Existing peer tables and peer endpoints may remain while migrations and old demo state are retired, but the current Student UI must not render a peer gate, call those routes, or reveal a peer approach/full solution.
 
 ### 9.4 Teacher group and tomorrow plan
 
@@ -334,17 +339,6 @@ The UI must label this feature “See a peer’s approach” and explain the gat
 
 For the demo, pre-generate and seed the common-denominator group plan. The UI may still show that it was AI-generated, but must not wait on the model to make the moment work.
 
-### 9.5 Photo of work → tutor help
-
-A student stuck on an item may upload a photo of their handwritten work and ask for help. This extends the tutor rung (§6a "stuck → AI tutor"); it does not replace typed scoring.
-
-1. The client uploads the image to a **Supabase Storage** bucket; the server sends it to a **vision-capable OpenAI model** with the current item context.
-2. The model reads the work and feeds the **tutor hint ladder** (§9.2) — it identifies where the work went wrong and returns a hint at the requested level, never the answer. The same answer-leak check applies.
-3. **Trust-boundary rule:** a vision reading of handwriting is fuzzy, so it lives in the **hint path (low stakes), never the scoring path.** Correctness is still decided by `answer_spec` on a typed or explicitly confirmed final answer. If the photo is used as the peer-gate attempt, the extracted answer must be **confirmed by the student** ("I see `3/8` — is that your answer?") before it is scored or verified.
-4. **Demo safety:** live handwriting recognition can misread on stage, so pre-capture the demo photo(s), run them through the pipeline ahead of time, and cache the vision result keyed by a stable image hash. The live moment replays the cached reading; a fresh upload may call the model but must fall back to the cached hint on timeout, error, or low confidence.
-5. **Privacy:** store the minimum image needed, strip it after the session, never log it, and use only fictional/demo work in seeds and recordings (§15).
-
-This is a scoped stretch feature: it must not delay the core student journey (§8.1 through §9.3) and is cut first if the Jul 19 integration outcome is at risk.
 
 ## 10. AI contracts and guardrails
 
@@ -354,8 +348,8 @@ AI output must be JSON validated against a TypeScript schema before it influence
 | --- | --- | --- | --- |
 | Error-pattern diagnosis | Item IDs, correct/incorrect responses, declared skills, misconception tags from `distractor_map` | One supported misconception label and short explanation | Cannot alter scores, mastery evidence, or item alignment; cannot name a misconception without a seeded tag supporting it |
 | Item wrap (§8.1) | Fixed operands, computed correct answer, sub-skill, difficulty | A word-problem context around the given numbers | May not change any number, the answer, or the operation; validator rejects any drift before the item is shown |
-| Tutor | Current item, safe context, hint level; optionally a vision reading of uploaded work (§9.5) | One hint at requested level | No final answer, no full solution, no unrelated tutoring |
-| Attempt verifier | Current item, attempt, explanation | `on_topic`, `non_trivial`, brief retry/support message | Does not decide final-answer correctness |
+| Tutor | Current item, safe context, hint level | One hint at requested level | No final answer, no full solution, no unrelated tutoring |
+| Work analysis | Safe item, learner's typed work, optional in-memory image; protected answers/steps remain server-only | One observation, one next step, one check question, optional image readability signal | Cannot score, update mastery, alter progress, quote learner work, or reveal an answer/solution |
 | Lesson-plan draft | Group skill, sizes, aggregate evidence, duration | Objective, materials, timed steps, checks for understanding, and a matched practice set (references to validated bank `item_id`s for the group's sub-skill) | Must not invent student PII, claim evidence not provided, or reference an item not in the validated bank |
 | Video vetting (offline/pre-build) | Candidate metadata/transcript and target skill | Relevance decision and rationale | Only recommendations already manually approved and seeded reach the app |
 
@@ -375,10 +369,10 @@ The exact adapter methods, result/fallback objects, cache behavior, and `ai_runs
 
 | Failure | User-visible behavior |
 | --- | --- |
-| OpenAI timeout/error | Use a matching verified cache; if absent, use the feature-safe fallback and log the failure. Peer verification is `uncertain` and remains locked. |
+| OpenAI timeout/error | Use a matching verified cache; if absent, use the feature-safe fallback and log the failure. Work analysis gives a generic, answer-safe next step and does not affect progress. |
 | Output schema invalid | Discard it and use the same safe fallback |
 | Suspected answer leakage | Do not show output; display a lower-level safe hint or “Try identifying the denominators first.” |
-| Attempt check uncertain | Ask student for a specific next step or explanation; do not unlock |
+| Work photo unreadable | Say the photo could not be read clearly and use the typed work plus an answer-safe fallback next step |
 | Database request fails | Show a retry state; do not present unsaved progress as complete |
 
 ## 11. API surface
@@ -391,8 +385,7 @@ Exact routing may evolve, but server operations must have these contracts.
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, practice session ID |
 | `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
 | `POST /api/tutor/hint` | authenticated student, `itemId`, `attempt`, `level` | safe hint, source (`ai`, `cache`, or `fallback`) |
-| `POST /api/peer-attempts` | authenticated student, `itemId`, `attemptText`, `explanation` | verification status, approach unlock state, retry message |
-| `GET /api/peer-solutions/:itemId` | authenticated student | only content permitted by `peer_unlocks` |
+| `POST /api/work-help` | authenticated student, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
 
@@ -409,7 +402,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 - `/demo` — non-production, environment-gated selector for allow-listed fictional demo identities only.
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
 - `/student/diagnosis` — exact gap, evidence-oriented plain language, “start practice.”
-- `/student/practice/[sessionId]` — item, answer submission, hint ladder, peer approach gate, progress.
+- `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
 - `/student/mastery` — narrow, plain-language skill status; sub-skills still below `mastered` are flagged “will come back” (the within-session resurfacing loop, §8); no misleading grade-level label.
 
 ### Teacher routes
@@ -449,10 +442,9 @@ It must include:
 - At least one student in each visible mastery state to make the heatmap legible.
 - Exactly five fixed, ordered diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
 - At least four frozen, validated practice items for each possible demonstrated target skill.
-- 3–4 reviewed peer approaches for the primary practice item.
 - One video per featured sub-skill with provider, title, URL, and verification note.
 - One 15–20 minute plan for the common-denominator teacher group.
-- One or two pre-captured photos of fictional handwritten work for the §9.5 photo-help demo, with their vision readings and hints pre-cached.
+- A rehearsed text-only work-help fallback for the primary practice item; optional demo photos are provided only at request time and are not seeded or retained.
 
 Diagnostic and practice items are produced by the §8.1 generation pipeline (parametric core + LLM wrap + validator) and then **frozen** into the seed, not hand-typed. "Seeded" here means the generated, validated demo set is captured so a fresh reset reproduces it exactly — the pipeline runs at authoring time, not on stage. All names, work samples, and responses must be fictional. Do not use real student information in local seeds, screenshots, prompts, or logs.
 
@@ -463,9 +455,9 @@ Diagnostic and practice items are produced by the §8.1 generation pipeline (par
 - Keep OpenAI and Supabase service keys in `.env.local`; commit only `.env.example` with variable names.
 - Never expose service-role keys or OpenAI keys to the browser.
 - Do not persist raw chain-of-thought or ask models to provide it.
-- Retain raw attempt text only in `attempt_submissions` for 30 days; do not log raw student inputs in console output or `ai_runs`.
-- For photo help (§9.5): store the minimum image, strip it after the session, never log it, and use only fictional handwritten work.
-- Pre-cache all demo-critical diagnosis, tutor, attempt-verification, lesson-plan, item-generation, and photo-reading outputs.
+- Do not log raw work-help text or photo bytes in console output or `ai_runs`; the current work-help path does not persist either input.
+- Work-help accepts only JPEG, PNG, or WebP photos up to 5 MiB, processes them only in request memory, and uses only fictional/demo work in recordings.
+- Rehearse the answer-safe fallback for every demo-critical diagnosis, tutor, work-analysis, lesson-plan, and item-generation moment.
 - Include loading, retry, and fallback states for each AI-dependent interaction.
 - Provide a documented CLI command to reset the database to the canonical seed state before every rehearsal or recording. Do not expose a production reset endpoint.
 - Use a clear prototype notice: not for grading, not a substitute for teacher judgment.
@@ -484,8 +476,8 @@ Prioritize tests for trust boundaries over visual polish.
 - The parametric core computes the correct answer and misconception distractors for a template, and the §8.1 validator rejects an LLM-wrapped item whose answer, operation, or sub-skill drifted from the parametric skeleton.
 - A missed practice item is re-queued once within the session before completion.
 - One incorrect response after `mastered` does not automatically downgrade mastery.
-- Peer approach cannot unlock without a verified attempt.
-- Full peer solution cannot unlock without a correct answer.
+- Work help is unavailable until the current item has a recorded miss and the learner has requested a `hint` or `guided_step`.
+- Work-analysis output never scores a response, changes mastery, unlocks content, or exposes a protected answer/solution step.
 - Tutor leakage checker rejects known final answers and solution-step strings.
 - Teacher grouping returns the expected common-denominator cohort.
 
@@ -496,7 +488,7 @@ Prioritize tests for trust boundaries over visual polish.
 - Model adapter schema failure produces a fallback response, not an app failure.
 - The teacher group page returns its cached plan and vetted video with the OpenAI API unavailable.
 - The item pipeline falls back to the bare parametric item when the LLM wrap fails validation, and the frozen demo set is reproduced identically from a fresh seed.
-- Photo help returns a cached hint (never a final answer) when the vision model is unavailable, and never scores correctness from the image alone.
+- Work help uses a verified cache or answer-safe fallback when the vision model is unavailable, and never scores correctness from an image or typed work alone.
 
 ### AI-output evals
 
@@ -513,7 +505,7 @@ Before recording or presenting, run the complete 3-minute journey using the same
 | Jul 14 | Project setup, Supabase schema/migrations, seed curriculum and class | Builder A: data; Builder B: UI shell |
 | Jul 15 | Diagnostic UI, deterministic scoring, diagnosis and practice-session creation | Builder A: server/domain; Builder B: student flow |
 | Jul 16 | Practice UI, tutor adapter with fallbacks, mastery updates | Builder A: AI/validation; Builder B: interaction polish |
-| Jul 17 | Attempt gate, seeded peer approaches, unlock rules | Builder A: API/rules; Builder B: UI/copy |
+| Jul 17 | Work-help safety boundary, safe fallback, and conditional student-card mount | Builder A: API/AI; Builder B: UI/copy |
 | Jul 18 | Teacher heatmap, auto-grouping, seeded plan/video | Builder A: dashboard data; Builder B: dashboard UI |
 | Jul 19 | Integrate full demo path, caching, test critical flows | Both |
 | Jul 20 | Bug fixing, seed reset, responsive/accessibility pass, demo rehearsal | Both |
@@ -531,9 +523,9 @@ The date-based schedule above remains the delivery timeline. This addendum defin
 
 After Phase 0 is merged, fan out without overlapping ownership:
 
-- **Track A — Domain and API:** deterministic scoring, diagnosis evidence/tag collection, mastery updates, practice selection/requeue, peer unlock rules, and every API route/server action. It calls the AI contract but never OpenAI directly.
-- **Track B — AI:** structured outputs, prompts, `ai_runs`, caches/fallbacks, tutor leakage checks/evals, diagnosis explanation, attempt verification, and LLM item wrapping. Wrapped items retain their original identifiers and deterministic answer data.
-- **Track C — Student UI:** diagnostic, diagnosis, practice/hint/peer gate, and mastery routes against the shared DTOs/fixtures. Photo help is outside this track and is cut before it threatens the core demo.
+- **Track A — Domain and API:** deterministic scoring, diagnosis evidence/tag collection, mastery updates, practice selection/requeue, the work-help route, and every API route/server action. It calls the AI contract but never OpenAI directly.
+- **Track B — AI:** structured outputs, prompts, `ai_runs`, caches/fallbacks, tutor/work-analysis leakage checks and evals, diagnosis explanation, and LLM item wrapping. Wrapped items retain their original identifiers and deterministic answer data.
+- **Track C — Student UI:** diagnostic, diagnosis, practice/hint/work-help, and mastery routes against the shared DTOs/fixtures.
 
 **Phase F — integration.** One integration owner runs the cross-track tests and rehearsal: reset the seed, complete Maya's journey, verify that mastery reaches the heatmap/group, test the cached attempt-gate moment, and rehearse with OpenAI unavailable. Track owners fix failures in their own areas and record outcomes in `IMPLEMENTATION_LOG.md`.
 
@@ -544,11 +536,11 @@ The hard rule is that Tracks A, B, and C do not start until Phase-0 contracts an
 The MVP is ready when all statements below are true:
 
 - A fresh database seed produces the same credible demo class and Maya journey.
-- The student flow completes from diagnostic through a gated peer approach without manual database edits.
+- The student flow completes from diagnostic through an answer-safe work-help escalation without manual database edits.
 - Maya receives the specific common-denominator diagnosis based on deterministic answer evidence.
 - Tutor help has three visible levels and never displays the final answer.
-- A poor-quality attempt does not unlock a peer approach; a meaningful attempt does.
-- A correct answer, and only a correct answer, unlocks the complete worked example.
+- Work help appears only after a recorded miss plus a requested `hint` or `guided_step`, and it never replaces answer checking.
+- Work-analysis output cannot reveal a final answer or full worked solution.
 - Teacher dashboard displays a heatmap and a group of students sharing the demonstrated gap.
 - The group page displays a 15–20 minute plan and a pre-vetted video without a live web dependency.
 - Model outage or malformed model output does not break the demo-critical journey.
@@ -637,7 +629,7 @@ The seed/reset command (§15) is the local-runnability story; it must reproduce 
 
 Codex collaboration is a graded artifact, not paperwork: the README narrative feeds both the technical-implementation and quality-of-idea scores, and a single `/feedback` Codex Session ID must point to the thread where the majority of core functionality was built. What is scored is the *narrative and the code*, not raw chat logs — so the goal is to keep the collaboration legible and captured in the right place. Both builders follow the same process from day 1.
 
-**One-thread rule.** Build the core loop — the student-loop trust boundary (scoring, diagnosis, tutor, attempt gate) — inside a single identifiable Codex thread. Only one session ID can be submitted, so the spine must not be scattered across throwaway threads. Side experiments may live elsewhere; the core build lives in one place.
+**One-thread rule.** Build the core loop — the student-loop trust boundary (scoring, diagnosis, tutor, work-help) — inside a single identifiable Codex thread. Only one session ID can be submitted, so the spine must not be scattered across throwaway threads. Side experiments may live elsewhere; the core build lives in one place.
 
 **Session-ID capture.** Once the majority of the core loop is built, run `/feedback` in that thread and record the returned session ID in `CODEX_LOG.md` immediately. Verify the exact `/feedback` behavior in Codex itself, since it is Codex's own command. Do not defer this to Jul 21 — the thread must be identifiable when captured.
 

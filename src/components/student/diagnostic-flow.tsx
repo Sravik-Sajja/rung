@@ -31,5 +31,5 @@ export function DiagnosticFlow() {
     }
   }
 
-  return <><p className="rounded bg-slate-50 p-4">1/1 · What is 1/3 + 1/4?</p><div className="mt-4"><AnswerInput onSubmit={submit} disabled={loading} /></div>{message && <p className="mt-3 text-sm text-red-700" role="alert">{message}</p>}</>;
+  return <><p className="rounded bg-surface-2 p-4">1/1 · What is 1/3 + 1/4?</p><div className="mt-4"><AnswerInput onSubmit={submit} disabled={loading} /></div>{message && <p className="mt-3 text-sm text-danger" role="alert">{message}</p>}</>;
 }

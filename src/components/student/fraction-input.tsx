@@ -1,11 +1,24 @@
 "use client";
 
-// Structured numerator/denominator entry, stacked to match the <Fraction> display so the answer
-// visually mirrors the question. Composes the same plain answer string the old plain-text
-// AnswerInput produced and calls the identical onSubmit(answer: string) contract, so scoreAnswer
-// and everything downstream of it works completely unchanged.
-import { useId, useState } from "react";
+// Structured answer entry that renders either a stacked numerator/denominator (mirroring the
+// <Fraction> display) or a single whole-number field. Which shape it starts on is decided by
+// `defaultMode` (see `answerModeForSubskill` below); a quiet text link lets the student switch
+// shape themselves if the default guessed wrong. Either way it composes the same plain string the
+// scoreAnswer contract already expects ("num/den" or just "num"), so everything downstream works
+// unchanged.
+import { useEffect, useId, useRef, useState } from "react";
 import { buttonClasses, cn } from "@/components/ui";
+
+export type AnswerMode = "fraction" | "whole";
+
+// Subskills whose expected answer is a single whole number (e.g. "find the common denominator")
+// rather than a fraction — used to pick a sensible `defaultMode` per item so the student isn't
+// asked to pick a shape before they've even read the question.
+const WHOLE_NUMBER_SUBSKILLS = new Set<string>(["find-common-denominator"]);
+
+export function answerModeForSubskill(subskillId: string): AnswerMode {
+  return WHOLE_NUMBER_SUBSKILLS.has(subskillId) ? "whole" : "fraction";
+}
 
 export function FractionInput({
   onSubmit,
@@ -13,6 +26,7 @@ export function FractionInput({
   label = "Your answer",
   formId,
   showSubmit = true,
+  defaultMode = "fraction",
   className,
 }: {
   onSubmit: (answer: string) => void;
@@ -22,34 +36,52 @@ export function FractionInput({
   formId?: string;
   /** Hide the built-in Check button when the surrounding layout renders its own action button. */
   showSubmit?: boolean;
+  /** Which answer shape the toggle starts on; the student can still switch. */
+  defaultMode?: AnswerMode;
   className?: string;
 }) {
+  const [mode, setMode] = useState<AnswerMode>(defaultMode);
   const [numerator, setNumerator] = useState("");
   const [denominator, setDenominator] = useState("");
   const numeratorId = useId();
   const denominatorId = useId();
+  const numeratorRef = useRef<HTMLInputElement>(null);
+  // Set only when the student clicks the toggle link (not on mount / defaultMode), so focus jumps
+  // to the numerator field after a manual switch but never steals focus on first render.
+  const focusPending = useRef(false);
+
+  useEffect(() => {
+    if (!focusPending.current) return;
+    focusPending.current = false;
+    numeratorRef.current?.focus();
+  }, [mode]);
+
+  function toggleMode() {
+    const next: AnswerMode = mode === "fraction" ? "whole" : "fraction";
+    setMode(next);
+    if (next === "whole") setDenominator(""); // a stale denominator must not leak into a whole-number answer
+    focusPending.current = true;
+  }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const num = numerator.trim();
-    const den = denominator.trim();
     if (!num) return;
-    // Same composed shape scoreAnswer already expects: "num/den", or just "num" for whole-number
-    // answers (e.g. "what common denominator..." questions), matching the plain AnswerInput's output.
+    // "num/den" for a fraction, or just "num" for a whole number — the exact shapes scoreAnswer expects.
+    if (mode === "whole") return onSubmit(num);
+    const den = denominator.trim();
     onSubmit(den ? `${num}/${den}` : num);
   }
 
   const fieldClasses = cn(
-    "w-24 rounded-md border border-border bg-surface-2 px-3 py-2 text-center text-xl font-bold text-ink",
+    "rounded-md border border-border bg-surface-2 px-3 py-2 text-center text-xl font-bold text-ink",
     "placeholder:font-normal placeholder:text-ink-faint",
     "disabled:bg-surface disabled:text-ink-faint",
   );
 
   return (
-    // Left-anchored cluster: the stacked input and the Check button sit together (never split to
-    // opposite edges), with the helper hint tucked underneath. Reads as one tidy control group.
     // Pass className="items-center text-center" (+ showSubmit={false}) for centered card layouts.
-    <form id={formId} className={cn("flex flex-col gap-3", className)} onSubmit={submit}>
+    <form id={formId} className={cn("flex flex-col", className)} onSubmit={submit}>
       <div className="flex items-center gap-5">
         <fieldset
           disabled={disabled}
@@ -63,33 +95,52 @@ export function FractionInput({
           }}
         >
           <legend className="sr-only">{label}</legend>
-          <div className="flex flex-col items-center gap-1">
-            <label className="sr-only" htmlFor={numeratorId}>
-              Numerator
-            </label>
-            <input
-              id={numeratorId}
-              inputMode="numeric"
-              autoComplete="off"
-              value={numerator}
-              onChange={(event) => setNumerator(event.target.value)}
-              placeholder="7"
-              className={fieldClasses}
-            />
-            <span aria-hidden="true" className="block h-[2px] w-full bg-ink" />
-            <label className="sr-only" htmlFor={denominatorId}>
-              Denominator
-            </label>
-            <input
-              id={denominatorId}
-              inputMode="numeric"
-              autoComplete="off"
-              value={denominator}
-              onChange={(event) => setDenominator(event.target.value)}
-              placeholder="12"
-              className={fieldClasses}
-            />
-          </div>
+          {mode === "fraction" ? (
+            <div className="flex flex-col items-center gap-1">
+              <label className="sr-only" htmlFor={numeratorId}>
+                Numerator
+              </label>
+              <input
+                ref={numeratorRef}
+                id={numeratorId}
+                inputMode="numeric"
+                autoComplete="off"
+                value={numerator}
+                onChange={(event) => setNumerator(event.target.value)}
+                placeholder="7"
+                className={cn(fieldClasses, "w-24")}
+              />
+              <span aria-hidden="true" className="block h-[2px] w-full bg-ink" />
+              <label className="sr-only" htmlFor={denominatorId}>
+                Denominator
+              </label>
+              <input
+                id={denominatorId}
+                inputMode="numeric"
+                autoComplete="off"
+                value={denominator}
+                onChange={(event) => setDenominator(event.target.value)}
+                placeholder="12"
+                className={cn(fieldClasses, "w-24")}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <label className="sr-only" htmlFor={numeratorId}>
+                {label}
+              </label>
+              <input
+                ref={numeratorRef}
+                id={numeratorId}
+                inputMode="numeric"
+                autoComplete="off"
+                value={numerator}
+                onChange={(event) => setNumerator(event.target.value)}
+                placeholder="12"
+                className={cn(fieldClasses, "w-28")}
+              />
+            </div>
+          )}
         </fieldset>
         {showSubmit && (
           <button type="submit" disabled={disabled || !numerator.trim()} className={buttonClasses("focus", "lg", "px-8")}>
@@ -97,10 +148,21 @@ export function FractionInput({
           </button>
         )}
       </div>
+
+      {/* Quiet, reversible affordance instead of an upfront segmented control — the student can
+          start answering right away, and only needs this if the default shape guessed wrong. */}
+      <button
+        type="button"
+        onClick={toggleMode}
+        disabled={disabled}
+        className="mt-5 text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
+      >
+        {mode === "fraction" ? "Answer with a whole number instead" : "Answer with a fraction instead"}
+      </button>
+
       {/* With the visible action button rendered outside the form (via the form attribute), this
           invisible in-form submit button keeps Enter-to-submit working in every browser. */}
       {!showSubmit && <button type="submit" hidden tabIndex={-1} aria-hidden="true" />}
-      <p className="text-sm text-ink-muted">Just one number? Leave the bottom box blank.</p>
     </form>
   );
 }

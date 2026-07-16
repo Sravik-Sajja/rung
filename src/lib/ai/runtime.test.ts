@@ -40,6 +40,18 @@ function tutorInput() {
   return { studentId: "maya-chen", item: safeItem, attempt: "I tried 3 + 4", level: "hint" as const, promptVersion: "tutor-v1" };
 }
 
+function workAnalysisInput() {
+  return {
+    studentId: "maya-chen",
+    item: { ...safeItem, id: "common-denominator-1" },
+    writtenWork: "I added 3 and 4 because I did not know what denominator to use.",
+    imageDataUrl: "data:image/png;base64,AA==",
+    protectedAnswers: ["12"],
+    protectedSolutionSteps: ["Rewrite each fraction with denominator 12."],
+    promptVersion: "work-analysis-v1",
+  };
+}
+
 describe("live AI adapter resolution", () => {
   it("uses a schema-valid live response and records it as valid", async () => {
     const store = new FakeRunStore();
@@ -141,9 +153,112 @@ describe("live AI adapter resolution", () => {
     expect(result.nonTrivial).toBe(false);
   });
 
+  it("uses a vision-capable work-analysis request without recording typed work or image data", async () => {
+    const store = new FakeRunStore();
+    const input = workAnalysisInput();
+    const client = new FakeCompletionClient({
+      observation: "The denominators still need a shared value before the fractions can be combined.",
+      nextStep: "List a few multiples for each denominator and look for the first value they share.",
+      checkQuestion: "Which number appears in both lists?",
+      imageRead: "readable",
+    });
+    const adapter = createAiAdapter({ completionClient: client, runStore: store });
+
+    const result = await adapter.analyzeWork(input);
+
+    expect(result).toMatchObject({ source: "ai", imageRead: "readable", leakCheck: "passed" });
+    expect(client.requests[0]).toMatchObject({
+      model: DEFAULT_AI_MODEL,
+      schemaName: "work_analysis",
+      imageDataUrl: input.imageDataUrl,
+    });
+    expect(JSON.stringify(store.records)).not.toContain(input.writtenWork);
+    expect(JSON.stringify(store.records)).not.toContain(input.imageDataUrl);
+    expect(store.records.at(-1)?.inputHash).not.toContain("12");
+  });
+
+  it("falls back when work analysis leaks a standalone short protected answer", async () => {
+    const store = new FakeRunStore();
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient({
+        observation: "Use 12 as the denominator for the fractions.",
+        nextStep: "Then continue with the fraction addition.",
+        checkQuestion: "What would you do after that?",
+        imageRead: "readable",
+      }),
+      runStore: store,
+    });
+
+    const result = await adapter.analyzeWork(workAnalysisInput());
+
+    expect(result.source).toBe("fallback");
+    expect(result.leakCheck).toBe("fallback");
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
+  it("requires imageRead to agree with whether a work photo was supplied", async () => {
+    const store = new FakeRunStore();
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient({
+        observation: "Start by comparing the denominators.",
+        nextStep: "List a few multiples for each denominator.",
+        checkQuestion: "Which number appears in both lists?",
+        imageRead: "readable",
+      }),
+      runStore: store,
+    });
+
+    const result = await adapter.analyzeWork({ ...workAnalysisInput(), imageDataUrl: undefined });
+
+    expect(result).toMatchObject({ source: "fallback", imageRead: "not_provided", leakCheck: "fallback" });
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
+  it("falls back when work analysis repeats a protected solution step", async () => {
+    const store = new FakeRunStore();
+    const input = {
+      ...workAnalysisInput(),
+      protectedSolutionSteps: ["Make equivalent fractions before you combine the numerators."],
+    };
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient({
+        observation: "You are beginning to compare the fractions.",
+        nextStep: "Make equivalent fractions before you combine the numerators.",
+        checkQuestion: "What needs to match before you combine fractions?",
+        imageRead: "readable",
+      }),
+      runStore: store,
+    });
+
+    const result = await adapter.analyzeWork(input);
+
+    expect(result.source).toBe("fallback");
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
+  it("uses a prior safe work-analysis cache entry after a live failure", async () => {
+    const store = new FakeRunStore();
+    store.cached = {
+      observation: "You have started by looking at the denominators.",
+      nextStep: "Write a short list of multiples for each denominator.",
+      checkQuestion: "Which value appears in both lists?",
+      imageRead: "unclear",
+    };
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient(new Error("network unavailable")),
+      runStore: store,
+    });
+
+    const result = await adapter.analyzeWork(workAnalysisInput());
+
+    expect(result).toMatchObject({ source: "cache", imageRead: "unclear", leakCheck: "passed" });
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "cache_hit"]);
+  });
+
   it("allows GPT-5.6 Terra to be selected per feature without changing the Luna default", () => {
     expect(modelFor("diagnosis_explanation", { defaultModel: DEFAULT_AI_MODEL, diagnosis_explanation: "gpt-5.6-terra" }))
       .toBe("gpt-5.6-terra");
     expect(modelFor("tutor_hint", { defaultModel: DEFAULT_AI_MODEL })).toBe("gpt-5.6-luna");
+    expect(modelFor("work_analysis", { defaultModel: DEFAULT_AI_MODEL })).toBe("gpt-5.6-luna");
   });
 });

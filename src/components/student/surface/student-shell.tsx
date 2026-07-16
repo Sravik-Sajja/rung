@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/components/ui";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // "focused" is the default reading column for a single flow; "wide" opens the frame for layouts
 // that fill the horizontal space on purpose (e.g. a two-column question + context split). "wide"
@@ -36,6 +37,7 @@ export function StudentShell({
           </span>
           <div className="flex items-center gap-3">
             {aside}
+            <ThemeToggle />
             <Link href={exitHref} className="text-sm font-medium text-ink-faint hover:text-ink">
               Exit
             </Link>

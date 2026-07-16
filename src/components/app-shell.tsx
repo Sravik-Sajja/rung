@@ -1,5 +1,6 @@
 // Shared page frame: Rung wordmark, student/teacher switch, and the prototype notice. Theme-aware via tokens.
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AppShell({
   children,
@@ -15,13 +16,14 @@ export function AppShell({
     <div className="min-h-screen bg-bg text-ink">
       <header className="sticky top-0 z-20 border-b border-border bg-surface shadow-sm">
         <div className={`mx-auto flex ${maxW} items-center justify-between px-6 py-3.5`}>
-          <Link href="/demo" className="flex items-baseline gap-2">
+          <Link href="/demo" className="flex shrink-0 items-baseline gap-2">
             <span className="text-lg font-extrabold tracking-tight text-ink">Rung</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-ink-faint">
+            {/* Subtitle yields below sm so the nav + theme toggle fit without horizontal overflow. */}
+            <span className="hidden font-mono text-[10px] uppercase tracking-wider text-ink-faint sm:inline">
               differentiated math
             </span>
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav className="flex shrink-0 items-center gap-1 text-sm">
             <Link
               href="/student/diagnostic"
               className={`rounded-md px-3 py-1.5 transition-colors ${
@@ -38,6 +40,7 @@ export function AppShell({
             >
               Teacher
             </Link>
+            <ThemeToggle />
           </nav>
         </div>
       </header>
