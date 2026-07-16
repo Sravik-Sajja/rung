@@ -53,6 +53,10 @@ function workAnalysisInput() {
 }
 
 describe("live AI adapter resolution", () => {
+  it("uses the default model when an optional feature override is blank", () => {
+    expect(modelFor("practice_plan", { defaultModel: "gpt-5.6-terra", practice_plan: "" })).toBe("gpt-5.6-terra");
+  });
+
   it("uses a schema-valid live response and records it as valid", async () => {
     const store = new FakeRunStore();
     const client = new FakeCompletionClient({ hint: "What multiple do both denominators share?" });
@@ -106,6 +110,22 @@ describe("live AI adapter resolution", () => {
 
     expect(result.source).toBe("fallback");
     expect(result.hint).toBe("Make one column that counts by 3 and another that counts by 4. Compare the columns until a number appears in both.");
+  });
+
+  it("returns a structured generated practice plan and records a live plan run", async () => {
+    const store = new FakeRunStore();
+    const client = new FakeCompletionClient({ items: [
+      { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
+      { kind: "fraction_operation", operation: "add", leftNumerator: 2, leftDenominator: 5, rightNumerator: 1, rightDenominator: 3 },
+      { kind: "fraction_operation", operation: "subtract", leftNumerator: 3, leftDenominator: 4, rightNumerator: 1, rightDenominator: 3 },
+    ] });
+    const result = await createAiAdapter({ completionClient: client, runStore: store }).generatePracticePlan({
+      studentId: "maya-chen", targetSubskillId: "add-unlike-denominators", misconceptionTags: ["adds_denominators"], promptVersion: "practice-plan-v1",
+    });
+
+    expect(result.source).toBe("ai");
+    expect(result.items).toHaveLength(3);
+    expect(store.records.at(-1)?.feature).toBe("practice_plan");
   });
 
   it("uses the selected deterministic misconception tag for Maya's diagnosis fallback", async () => {

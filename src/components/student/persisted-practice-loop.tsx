@@ -11,16 +11,10 @@ import { WorkHelpCard } from "@/components/student/work-help-card";
 import { buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 
-type PracticeItem = { practiceSessionItemId: string; itemId: string; subskillId: string; prompt: string; position: number; status: "pending" | "missed" | "requeued" | "correct"; isResurfaced: boolean; peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean } };
+type PracticeItem = { practiceSessionItemId: string; itemId: string; subskillId: string; prompt: string; position: number; status: "pending" | "missed" | "requeued" | "correct"; isResurfaced: boolean; peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean }; plan?: { subskillId: string; title: string; reason: string } };
 // `progress` only exists on the GET /api/practice payload — the POST /api/responses `practice`
 // object omits it — so the UI derives counts from `items` instead of reading it.
 type Practice = { session: { id: string; studentId: string; status: "active" | "complete"; currentItemId: string | null }; items: PracticeItem[]; progress?: { completedItemCount: number; totalItemCount: number } };
-
-const hints: Record<HintLevel, string> = {
-  nudge: "Look at what the denominators tell you before you combine fractions.",
-  hint: "Choose a denominator both original denominators divide into evenly.",
-  guided_step: "Rewrite each fraction over the common denominator, then combine only the numerators. What fraction do you get?",
-};
 
 // The external action button submits the FractionInput's form via the `form` attribute, so
 // Check and Next can morph in one fixed position at the bottom of the card (mirrors the
@@ -51,6 +45,9 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
   const [nextPractice, setNextPractice] = useState<Practice | null>(null);
   const [lastCorrect, setLastCorrect] = useState(false);
   const [activeHint, setActiveHint] = useState<HintLevel | undefined>();
+  const [hintText, setHintText] = useState<string>();
+  const [hintLoading, setHintLoading] = useState(false);
+  const [lastAttempt, setLastAttempt] = useState("");
   // This is an escalation, not another first-attempt aid: the learner must
   // use a substantive hint and then miss the same item again.
   const [workHelpEligible, setWorkHelpEligible] = useState(false);
@@ -73,6 +70,7 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
     if (!current || !practice) return;
     const hadSubstantiveHint = activeHint === "hint" || activeHint === "guided_step";
     setError(null);
+    setLastAttempt(answer);
     const response = await fetch("/api/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,9 +100,38 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
     setNextPractice(null);
     setLastCorrect(false);
     setActiveHint(undefined);
+    setHintText(undefined);
+    setLastAttempt("");
     setWorkHelpEligible(false);
     setAnswerRevision((currentRevision) => currentRevision + 1);
     setHintOpen(false);
+  }
+
+  async function requestHint(level: HintLevel) {
+    if (!current) return;
+    setError(null);
+    setHintLoading(true);
+    try {
+      const response = await fetch("/api/tutor/hint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: canonicalDemoIds.mayaStudentId,
+          itemId: current.itemId,
+          practiceSessionId: practice?.session.id,
+          attempt: lastAttempt,
+          level,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Could not load a hint right now.");
+      setActiveHint(level);
+      setHintText(body.hint);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not load a hint right now.");
+    } finally {
+      setHintLoading(false);
+    }
   }
 
   if (!practice || !current) {
@@ -154,6 +181,7 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
                 each question. Two zones: question, then answer + help + one morphing action button. */}
             <div key={current.practiceSessionItemId} className="animate-rise rounded-2xl border border-border bg-elevated shadow-lg">
               <div className="flex flex-col items-center gap-3 p-8 text-center sm:p-10 2xl:p-14">
+                {current.plan && <div className="w-full rounded-lg border border-focus bg-focus-soft p-3 text-left"><p className="text-xs font-semibold uppercase tracking-wide text-focus">Practice plan: {current.plan.title}</p><p className="mt-1 text-sm text-ink-muted">{current.plan.reason}</p></div>}
                 {current.isResurfaced && (
                   <span className="inline-flex items-center rounded-full border border-spark bg-spark-soft px-3 py-1 text-xs font-semibold text-spark-ink">
                     Quick revisit
@@ -231,7 +259,7 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
 
             {hintOpen && (
               <div className="animate-rise">
-                <HintLadder activeLevel={activeHint} hint={activeHint ? hints[activeHint] : undefined} onRequest={setActiveHint} embedded />
+                <HintLadder activeLevel={activeHint} hint={hintText} loading={hintLoading} onRequest={requestHint} embedded />
               </div>
             )}
 

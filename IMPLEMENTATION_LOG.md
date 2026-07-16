@@ -358,3 +358,28 @@ Use this template for every meaningful change:
 
 - **Hint-route handoff:** `src/components/student/persisted-practice-loop.tsx` now mounts `WorkHelpCard` only after a recorded miss, a requested `hint`/`guided_step`, and another missed response. Its existing hint text is still temporary local copy; wire it to `/api/tutor/hint` before the deployable rehearsal.
 - **No retention by design:** this prototype processes work photos in memory. Do not add database or Storage persistence without a separate consent, retention, deletion, and access-control decision.
+
+## 2026-07-15 — AI-powered student support and generated practice plans
+
+### Completed
+
+- Wired the persisted practice hint ladder to `POST /api/tutor/hint`, including generated-item lookup through the active practice session, loading/error handling, and the existing safe fallback/escalation behavior.
+- Added verified GPT practice-plan generation for the five supported fraction skills: number lines, equivalent fractions, common denominators, and unlike-denominator addition/subtraction. The model supplies constrained parameters only; server code creates and scores each item, rejecting mismatched kinds or invalid operations.
+- A diagnostic now creates separate, category-labeled local-demo plans for every missed skill instead of a mixed queue. Each plan opens its own generated session; fallback plans remain skill-appropriate.
+- Accepted any valid positive common multiple for common-denominator practice.
+- Added the per-feature practice-plan model setting, corrected blank optional model overrides so they inherit a default, and updated `architecture.md` from frozen-only practice selection to generate-and-verify with fallback.
+- Added coverage for live structured plan output, deterministic item validation, and diagnostic-completion replacement routing.
+
+### Validation
+
+- Focused completion-route regression test: passed (wrong diagnostic answer → generated `ai-practice-*` items, never seeded IDs).
+- `npx tsc --noEmit`: passed.
+- Focused AI runtime, generated-plan store, and diagnostic-completion tests: 19 passed.
+- `npm run build`: passed.
+
+### Bugs / follow-ups
+
+- Generated plans currently replace only the local demo-session plan. Extend the persisted Supabase practice-session creation path to save generated validated items before relying on this behavior after deployment.
+- Live hint generation still requires `OPENAI_API_KEY` (and optionally `OPENAI_MODEL_TUTOR_HINT`) in `.env.local`; without it, the same route intentionally returns reviewed item-specific fallback hints.
+- **Number-line presentation:** current prompts name the target fraction directly (for example, “Which point is 3/4…”), which makes the task feel more like identifying a label than locating a point.
+- Make differences in nudge, hint, and guided step more obvious in prompt

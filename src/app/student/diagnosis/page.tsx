@@ -10,6 +10,7 @@ import { canonicalDemoIds } from "@/lib/demo/contracts";
 type CompletedDiagnostic = {
   diagnosis: { selectedSubskillId: string; misconceptionTag: string; observation: string; explanation: string; nextStep: string; explanationSource: string };
   practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number };
+  practicePlans?: Array<{ id: string; title: string; reason: string; itemCount: number }>;
 };
 
 function DiagnosisContent() {
@@ -52,7 +53,7 @@ function DiagnosisContent() {
                 {/* The next step is the payoff of the whole check-in — spark-gold gives it the "here's your
                     momentum" lift instead of blending into another green panel. */}
                 <div className="animate-rise rounded-xl border border-spark bg-spark-soft p-6"><p className="mb-2 font-mono text-xs font-medium uppercase tracking-wider text-spark-ink">Next step</p><p className="text-ink">{result.diagnosis.nextStep}</p></div>
-                <div className="flex justify-end pt-2"><Link href={`/student/practice/${result.practiceSession.id}`} className={buttonClasses("focus", "lg")}>Start {result.practiceSession.itemCount}-question practice</Link></div>
+                <div className="grid gap-3">{(result.practicePlans?.length ? result.practicePlans : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }]).map((plan) => <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p><Link href={`/student/practice/${plan.id}`} className={buttonClasses("focus", "md")}>Start practice</Link></Card>)}</div>
               </div>
             )}
           </div>

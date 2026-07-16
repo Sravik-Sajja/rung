@@ -197,6 +197,10 @@ Phase 0 must seed and export typed fallback objects under the same schemas:
 
 Every adapter invocation—AI, cache, fallback, or safety rejection—creates an `ai_runs` record and returns that `aiRunId`. The record contains an input hash and metadata only; it must never contain raw attempt text, typed work, photo bytes, or a photo data URL. Adapter implementations may change, but their inputs and outputs may not change without revising this document.
 
+### Generated practice-plan contract
+
+`generatePracticePlan` returns 3–4 items of exactly one supported kind for its target sub-skill: `number_line`, `equivalent_fraction`, `common_denominator`, or `fraction_operation`. It returns parameters only, never a prompt, answer, or solution. The server reconstructs the learner-facing item and scores it deterministically. If one returned item fails schema, target-kind, or math validation, reject the entire plan and use that skill's fallback plan; do not mix valid and invalid items.
+
 ### Item-wrap invariant
 
 `wrapItem` may alter only the learner-facing prompt. The parametric item's ID, operands, answer specification, distractor map, sub-skill, difficulty, solution steps, and computed answer remain unchanged. Re-freezing updates the prompt at the existing item ID; it never creates a new item.
@@ -263,6 +267,8 @@ export type CompleteDiagnosticResponse = {
     firstItemId: string;
     itemCount: number;
   };
+  /** One independently selectable plan for each missed sub-skill, prerequisite-first. */
+  practicePlans: Array<{ id: string; title: string; reason: string; itemCount: number }>;
 };
 
 export type GetDiagnosticResponse = {
@@ -297,6 +303,8 @@ export type GetPracticeResponse = {
 export type TutorHintRequest = {
   studentId: string;
   itemId: string;
+  /** Required for generated items so the server resolves its trusted session record. */
+  practiceSessionId?: string;
   attempt: string;
   level: HintLevel;
 };

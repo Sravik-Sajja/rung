@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { analyzeWorkInputSchema } from "@/lib/ai/contracts";
+import { analyzeWorkInputSchema, generatedPracticePlanSchema } from "@/lib/ai/contracts";
 import type {
   AiSource,
   AttemptVerification,
@@ -16,12 +16,13 @@ import type {
   SafeItem,
   TutorHint,
   WorkAnalysis,
+  GeneratedPracticePlan,
 } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
 import { containsAnswerLeak, containsGenericTutorLeak } from "@/lib/ai/leakage";
 
-export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "item_wrap";
+export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "practice_plan" | "item_wrap";
 export type AiRunStatus = "valid" | "live_failed" | "cache_hit" | "fallback";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna";
@@ -32,6 +33,7 @@ export interface AiModelConfig {
   tutor_hint?: string;
   attempt_verification?: string;
   work_analysis?: string;
+  practice_plan?: string;
   item_wrap?: string;
 }
 
@@ -98,6 +100,7 @@ const workAnalysisPayloadSchema = z.object({
 });
 
 const itemWrapPayloadSchema = z.object({ prompt: z.string().min(1) });
+const practicePlanPayloadSchema = z.object({ items: generatedPracticePlanSchema.shape.items });
 
 type ResolvedPayload<Payload> = { payload: Payload; source: AiSource; aiRunId: string };
 
@@ -382,6 +385,37 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       } satisfies AttemptVerification;
     },
 
+    async generatePracticePlan(input) {
+      const operationFallbackItems = [
+        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
+        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 2, leftDenominator: 5, rightNumerator: 1, rightDenominator: 3 },
+        { kind: "fraction_operation" as const, operation: "subtract" as const, leftNumerator: 3, leftDenominator: 4, rightNumerator: 1, rightDenominator: 3 },
+        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 3, leftDenominator: 8, rightNumerator: 1, rightDenominator: 6 },
+      ];
+      const fallbackItems = input.targetSubskillId === "fraction-number-line"
+        ? [{ kind: "number_line" as const, numerator: 1, denominator: 2 }, { kind: "number_line" as const, numerator: 2, denominator: 3 }, { kind: "number_line" as const, numerator: 3, denominator: 4 }]
+        : input.targetSubskillId === "equivalent-fractions"
+          ? [{ kind: "equivalent_fraction" as const, numerator: 1, denominator: 3, multiplier: 2 }, { kind: "equivalent_fraction" as const, numerator: 2, denominator: 5, multiplier: 3 }, { kind: "equivalent_fraction" as const, numerator: 3, denominator: 4, multiplier: 2 }]
+          : input.targetSubskillId === "find-common-denominator"
+            ? [{ kind: "common_denominator" as const, leftDenominator: 3, rightDenominator: 4 }, { kind: "common_denominator" as const, leftDenominator: 4, rightDenominator: 5 }, { kind: "common_denominator" as const, leftDenominator: 3, rightDenominator: 5 }]
+            : operationFallbackItems;
+      const result = await resolveStructuredPayload({
+        feature: "practice_plan", promptVersion: input.promptVersion, inputHash: hashInput(input), model: modelFor("practice_plan", models), schema: practicePlanPayloadSchema, completionClient, runStore,
+        request: {
+          schemaName: "practice_plan",
+          system: "Create 3 or 4 middle-school fraction practice items for the diagnosed target skill. Use number_line for fraction-number-line, equivalent_fraction for equivalent-fractions, common_denominator for find-common-denominator, and fraction_operation (with unlike denominators) for addition or subtraction skills. Return only the schema; never include answers, solutions, or explanations.",
+          user: JSON.stringify({ targetSubskillId: input.targetSubskillId, misconceptionTags: input.misconceptionTags }),
+        },
+        validate: (payload) => {
+          const expected = input.targetSubskillId === "fraction-number-line" ? "number_line" : input.targetSubskillId === "equivalent-fractions" ? "equivalent_fraction" : input.targetSubskillId === "find-common-denominator" ? "common_denominator" : "fraction_operation";
+          if (!payload.items.every((item) => item.kind === expected)) throw new Error("Practice plan did not match its diagnosed skill.");
+          if (expected === "fraction_operation" && payload.items.some((item) => item.kind === "fraction_operation" && item.leftDenominator === item.rightDenominator)) throw new Error("Fraction-operation plan used equal denominators.");
+        },
+        fallback: () => ({ items: fallbackItems }),
+      });
+      return { items: result.payload.items, source: result.source, promptVersion: input.promptVersion, aiRunId: result.aiRunId } satisfies GeneratedPracticePlan;
+    },
+
     async analyzeWork(rawInput) {
       const input = analyzeWorkInputSchema.parse(rawInput);
       const result = await resolveStructuredPayload({
@@ -503,12 +537,16 @@ export function readModelConfig(env: NodeJS.ProcessEnv = process.env): AiModelCo
     tutor_hint: env.OPENAI_MODEL_TUTOR_HINT,
     attempt_verification: env.OPENAI_MODEL_ATTEMPT_VERIFICATION,
     work_analysis: env.OPENAI_MODEL_WORK_ANALYSIS,
+    practice_plan: env.OPENAI_MODEL_PRACTICE_PLAN,
     item_wrap: env.OPENAI_MODEL_ITEM_WRAP,
   };
 }
 
 export function modelFor(feature: AiFeature, models: AiModelConfig): string {
-  return models[feature] ?? models.defaultModel ?? DEFAULT_AI_MODEL;
+  // `.env.local` commonly contains empty optional overrides. Treat those the
+  // same as an unset value: passing an empty model name makes the provider
+  // reject the request and silently sends the learner to the fixed fallback.
+  return models[feature]?.trim() || models.defaultModel?.trim() || DEFAULT_AI_MODEL;
 }
 
 export function hashInput(input: unknown): string {

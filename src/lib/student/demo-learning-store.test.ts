@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { completeDemoDiagnostic, getDemoPractice, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
+import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoPractice, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { canonicalDemoIds, canonicalDiagnosticItemIds } from "@/lib/demo/contracts";
 
 describe("demo diagnostic to practice journey", () => {
@@ -56,5 +56,18 @@ describe("demo diagnostic to practice journey", () => {
     });
 
     expect(response).toMatchObject({ isCorrect: true });
+  });
+
+  it("uses server-validated generated operands to replace a newly created practice plan", () => {
+    const diagnostic = startDemoDiagnostic(canonicalDemoIds.mayaStudentId);
+    for (const itemId of canonicalDiagnosticItemIds) recordDemoDiagnosticResponse({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId: canonicalDemoIds.mayaStudentId, itemId, answer: itemId === "common-denominator-1" ? "7" : "1" });
+    const completed = completeDemoDiagnostic({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId: canonicalDemoIds.mayaStudentId })!;
+    const applied = applyGeneratedDemoPracticePlan({ practiceSessionId: completed.practiceSession.id, studentId: canonicalDemoIds.mayaStudentId, targetSubskillId: "find-common-denominator", items: [
+      { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
+      { kind: "fraction_operation", operation: "subtract", leftNumerator: 3, leftDenominator: 4, rightNumerator: 1, rightDenominator: 3 },
+      { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 5, rightNumerator: 1, rightDenominator: 2 },
+    ] });
+    expect(applied?.itemCount).toBe(3);
+    expect(getDemoPractice(completed.practiceSession.id, canonicalDemoIds.mayaStudentId)?.items[0].prompt).toBe("What is 1/3 + 1/4?");
   });
 });

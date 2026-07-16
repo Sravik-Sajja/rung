@@ -108,10 +108,26 @@ export const itemWrapSchema = metaSchema.extend({
 });
 export type ItemWrap = z.infer<typeof itemWrapSchema>;
 
+const fractionOperationPlanItem = z.object({ kind: z.literal("fraction_operation"),
+    operation: z.enum(["add", "subtract"]),
+    leftNumerator: z.number().int().min(1).max(20),
+    leftDenominator: z.number().int().min(2).max(20),
+    rightNumerator: z.number().int().min(1).max(20),
+    rightDenominator: z.number().int().min(2).max(20),
+  });
+const numberLinePlanItem = z.object({ kind: z.literal("number_line"), numerator: z.number().int().min(1).max(19), denominator: z.number().int().min(2).max(20) });
+const equivalentFractionPlanItem = z.object({ kind: z.literal("equivalent_fraction"), numerator: z.number().int().min(1).max(10), denominator: z.number().int().min(2).max(12), multiplier: z.number().int().min(2).max(6) });
+const commonDenominatorPlanItem = z.object({ kind: z.literal("common_denominator"), leftDenominator: z.number().int().min(2).max(12), rightDenominator: z.number().int().min(2).max(12) });
+export const generatedPracticePlanSchema = metaSchema.extend({
+  items: z.array(z.discriminatedUnion("kind", [fractionOperationPlanItem, numberLinePlanItem, equivalentFractionPlanItem, commonDenominatorPlanItem])).min(3).max(4),
+});
+export type GeneratedPracticePlan = z.infer<typeof generatedPracticePlanSchema>;
+
 export interface RungAiAdapter {
   diagnoseExplanation(input: { studentId: string; assignmentId: string; gradeBand: string; targetSubskillId: string; supportedMisconceptionTags: string[]; evidence: DiagnosisEvidence[]; promptVersion: string }): Promise<DiagnosisExplanation>;
   tutorHint(input: { studentId: string; item: SafeItem; attempt: string; level: HintLevel; promptVersion: string }): Promise<TutorHint>;
   verifyAttempt(input: { studentId: string; item: SafeItem; attemptText: string; explanation: string; normalizedAttemptText: string; promptVersion: string }): Promise<AttemptVerification>;
   analyzeWork(input: AnalyzeWorkInput): Promise<WorkAnalysis>;
+  generatePracticePlan(input: { studentId: string; targetSubskillId: string; misconceptionTags: string[]; promptVersion: string }): Promise<GeneratedPracticePlan>;
   wrapItem(input: { item: ParametricItem; promptVersion: string }): Promise<ItemWrap>;
 }

@@ -1,15 +1,19 @@
 import { canonicalDemoIds, canonicalDiagnosticItemIds } from "@/lib/demo/contracts";
 import { demoItems, demoMastery, demoSubskills } from "@/lib/demo-data";
 import { scoreAnswer } from "@/lib/math/scoring";
+import { createFractionOperationItem, validateParametricFractionItem } from "@/lib/items/fraction-generator";
 import { collectDiagnosticEvidence, nextMasteryLevel, selectDiagnosticGap, selectPracticeItems, shouldRequeue } from "@/lib/student/learning-loop";
 import { createDemoSessionId, getDemoSession, resetDemoSessionState, setDemoSession } from "@/lib/student/demo-session-state";
 import type { Item, MasteryLevel } from "@/lib/types";
+import type { GeneratedPracticePlan } from "@/lib/ai/contracts";
 
 type DiagnosticRun = { id: string; studentId: string; assignmentId: string; answers: Map<string, { answer: string; isCorrect: boolean; usedHint: boolean }> };
-type PracticeOccurrence = { id: string; item: Item; position: number; status: "pending" | "missed" | "requeued" | "correct" };
+type PracticePlan = { subskillId: string; title: string; reason: string };
+type PracticeOccurrence = { id: string; item: Item; position: number; status: "pending" | "missed" | "requeued" | "correct"; plan?: PracticePlan };
 type PracticeRun = { id: string; studentId: string; topicId: string; items: PracticeOccurrence[]; mastery: Map<string, { level: MasteryLevel; evidenceCount: number }> };
 
 const latestMastery = new Map<string, { level: MasteryLevel; evidenceCount: number }>();
+const generatedPracticeItems = new Map<string, Item>();
 let sequence = 0;
 
 const prerequisites = new Map(demoSubskills.map((skill) => [
@@ -55,6 +59,8 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
   const items = diagnosticItems();
   if (!run || run.studentId !== input.studentId || run.answers.size !== items.length) return null;
   const evidence = collectDiagnosticEvidence(items, run.answers);
+  const practicePlanTargets = [...new Map(evidence.filter((entry) => !entry.isCorrect).map((entry) => [entry.subskillId, entry])).values()]
+    .map((entry) => ({ subskillId: entry.subskillId, misconceptionTag: entry.misconceptionTag ?? "needs-practice" }));
   const gap = selectDiagnosticGap(evidence, prerequisites) ?? {
     subskillId: canonicalDemoIds.commonDenominatorSubskillId,
     misconceptionTag: null,
@@ -90,6 +96,7 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
       selectedSubskillId: gap.subskillId,
       misconceptionTag: gap.misconceptionTag ?? "no_recognized_distractor",
       evidence: gap.evidence,
+      practicePlanTargets,
       observation: "Your answers show that this skill is the next useful step.",
       explanation: "We will practice this prerequisite before moving to harder fraction problems.",
       nextStep: "Start the focused practice set.",
@@ -114,9 +121,51 @@ export function getDemoPractice(sessionId: string, studentId: string) {
       position: entry.position,
       status: entry.status,
       isResurfaced: entry.status === "requeued",
+      plan: entry.plan,
       peerGate: { approachUnlocked: false, fullSolutionUnlocked: false },
     })),
   };
+}
+
+/** Creates an empty local session that will be populated only by a validated generated plan. */
+export function createGeneratedDemoPracticeSession(studentId: string) {
+  const id = createDemoSessionId("practice");
+  setDemoSession("practice", id, { id, studentId, topicId: canonicalDemoIds.fractionsTopicId, items: [], mastery: new Map() } satisfies PracticeRun);
+  return id;
+}
+
+/** Lets server-only helpers (such as tutor hints) resolve a generated item without trusting client prompt text. */
+export function findGeneratedDemoPracticeItem(itemId: string) {
+  return generatedPracticeItems.get(itemId) ?? null;
+}
+
+export function findDemoPracticeSessionItem(input: { practiceSessionId: string; studentId: string; itemId: string }) {
+  const run = getDemoSession<PracticeRun>("practice", input.practiceSessionId);
+  if (!run || run.studentId !== input.studentId) return null;
+  return run.items.find((entry) => entry.item.id === input.itemId)?.item ?? null;
+}
+
+/** Replaces a newly-created demo session with AI-planned operands only after deterministic math validation. */
+export function applyGeneratedDemoPracticePlan(input: { practiceSessionId: string; studentId: string; targetSubskillId: string; items: GeneratedPracticePlan["items"] }) {
+  return applyGeneratedDemoPracticePlans({ practiceSessionId: input.practiceSessionId, studentId: input.studentId, plans: [{ targetSubskillId: input.targetSubskillId, misconceptionTag: "needs-practice", items: input.items }] });
+}
+
+/** Replaces a fresh demo session with one validated, labeled mini-plan per missed skill. */
+export function applyGeneratedDemoPracticePlans(input: { practiceSessionId: string; studentId: string; plans: Array<{ targetSubskillId: string; misconceptionTag: string; items: GeneratedPracticePlan["items"] }> }) {
+  const run = getDemoSession<PracticeRun>("practice", input.practiceSessionId);
+  if (!run || run.studentId !== input.studentId || run.items.some((item) => item.status !== "pending")) return null;
+  try {
+    const items = input.plans.flatMap((plan, planIndex) => plan.items.map((generated, index) => ({
+      item: generated.kind === "fraction_operation" ? createFractionOperationItem({ id: `ai-practice-${run.id}-${planIndex + 1}-${index + 1}`, operation: generated.operation, left: { numerator: generated.leftNumerator, denominator: generated.leftDenominator }, right: { numerator: generated.rightNumerator, denominator: generated.rightDenominator }, subskillId: plan.targetSubskillId, difficulty: index + 1 }) : generated.kind === "number_line" ? { id: `ai-practice-${run.id}-${planIndex + 1}-${index + 1}`, subskillId: plan.targetSubskillId, prompt: `Which point is ${generated.numerator}/${generated.denominator} of the way from 0 to 1?`, answerSpec: { accepted: [`${generated.numerator}/${generated.denominator}`] }, distractorMap: {} } : generated.kind === "equivalent_fraction" ? { id: `ai-practice-${run.id}-${planIndex + 1}-${index + 1}`, subskillId: plan.targetSubskillId, prompt: `What fraction is equivalent to ${generated.numerator}/${generated.denominator} when both parts are multiplied by ${generated.multiplier}?`, answerSpec: { accepted: [`${generated.numerator * generated.multiplier}/${generated.denominator * generated.multiplier}`] }, distractorMap: {} } : { id: `ai-practice-${run.id}-${planIndex + 1}-${index + 1}`, subskillId: plan.targetSubskillId, prompt: `What is a common denominator for 1/${generated.leftDenominator} and 1/${generated.rightDenominator}?`, answerSpec: { accepted: [String(generated.leftDenominator * generated.rightDenominator)] }, distractorMap: {} },
+      plan: { subskillId: plan.targetSubskillId, title: demoSubskills.find((skill) => skill.id === plan.targetSubskillId)?.name ?? plan.targetSubskillId, reason: `Assigned because this skill was missed in the check-in (${plan.misconceptionTag.replaceAll("_", " ")}).` },
+    })));
+    if (items.length < 3 || !items.every(({ item }) => item.id.startsWith("ai-practice-"))) return null;
+    run.items = items.map(({ item, plan }, index) => ({ id: id("practice-item"), item, plan, position: index + 1, status: "pending" }));
+    run.items.forEach(({ item }) => generatedPracticeItems.set(item.id, item));
+    return { firstItemId: run.items[0].item.id, itemCount: run.items.length };
+  } catch {
+    return null;
+  }
 }
 
 export function recordDemoPracticeResponse(input: { practiceSessionId: string; practiceSessionItemId: string; studentId: string; answer: string }) {
@@ -157,5 +206,6 @@ export function getDemoStudentMastery(studentId: string) {
 export function resetDemoLearningStore() {
   resetDemoSessionState();
   latestMastery.clear();
+  generatedPracticeItems.clear();
   sequence = 0;
 }

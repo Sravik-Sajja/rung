@@ -22,7 +22,7 @@ export const responseSchema = z.discriminatedUnion("context", [
   }),
 ]);
 
-export const hintSchema = z.object({ studentId: z.string(), itemId: z.string(), attempt: z.string(), level: z.enum(["nudge", "hint", "guided_step"]) });
+export const hintSchema = z.object({ studentId: z.string(), itemId: z.string(), practiceSessionId: z.string().optional(), attempt: z.string(), level: z.enum(["nudge", "hint", "guided_step"]) });
 export const peerAttemptSchema = z.object({ studentId: z.string(), itemId: z.string(), attemptText: z.string(), explanation: z.string() });
 
 /**

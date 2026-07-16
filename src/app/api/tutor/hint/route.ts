@@ -2,12 +2,15 @@
 import { NextResponse } from "next/server";
 import { runtimeAiAdapter } from "@/lib/ai/adapter";
 import { demoItems } from "@/lib/demo-data";
+import { findDemoPracticeSessionItem, findGeneratedDemoPracticeItem } from "@/lib/student/demo-learning-store";
 import { hintSchema } from "@/lib/validation/schemas";
 
 export async function POST(request: Request) {
   const result = hintSchema.safeParse(await request.json());
   if (!result.success) return NextResponse.json({ error: "Invalid hint request" }, { status: 400 });
-  const item = demoItems.find((candidate) => candidate.id === result.data.itemId);
+  const item = demoItems.find((candidate) => candidate.id === result.data.itemId)
+    ?? (result.data.practiceSessionId ? findDemoPracticeSessionItem({ practiceSessionId: result.data.practiceSessionId, studentId: result.data.studentId, itemId: result.data.itemId }) : null)
+    ?? findGeneratedDemoPracticeItem(result.data.itemId);
   if (!item) return NextResponse.json({ error: "Unknown item" }, { status: 404 });
 
   const hint = await runtimeAiAdapter.tutorHint({

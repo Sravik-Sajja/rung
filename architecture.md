@@ -251,19 +251,19 @@ For the main demo student, the selected diagnosis must be stable: **finds no com
 
 ### Practice selection algorithm
 
-1. Identify the selected weak sub-skill and any direct unmet prerequisite.
-2. Select exactly four validated active items from the frozen bank for that skill, beginning with the prerequisite where applicable.
-3. Order from concrete/scaffolded to target-level difficulty.
-4. Items come from the generation pipeline in §8.1, not a hand-typed bank. Selection is deterministic from the frozen, validated bank; required learner practice is never generated at runtime.
+1. Identify every missed sub-skill, ordered prerequisite-first; each becomes a separately selectable practice plan rather than one mixed queue.
+2. Request a structured 3–4 item plan for each skill. The model may choose only a supported kind: `number_line`, `equivalent_fraction`, `common_denominator`, or `fraction_operation` (addition/subtraction with unlike denominators).
+3. Deterministically construct and validate every prompt and answer rule from the returned parameters. Reject the entire plan if any item is malformed, has the wrong kind for its skill, or fails its math constraint.
+4. A rejected plan falls back as a whole to that skill's validated fallback plan; other skill plans from the same diagnostic remain unaffected.
 
 ### 8.1 Item generation pipeline
 
-Questions are **generated, not hard-coded** — but the math is owned by deterministic code and the language is owned by the model, so the model can never invent a wrong answer key. Both halves run in the demo path.
+Questions are **generated, not hard-coded** — but the model is limited to a typed item grammar and deterministic code owns the prompt construction and answer rule, so the model can never invent a wrong answer key. Both halves run in the demo path.
 
-1. **Parametric core (deterministic).** A template plus a seeded number picker produces the item skeleton: the operands, the exact computed correct answer, and the misconception distractors computed from known wrong procedures (e.g., adding numerators and denominators yields `2/5 + 1/3 → 3/8`, tagged `adds_num_and_denom`). This step alone yields a valid, solvable item and its `distractor_map` for free — no LLM, no hallucination risk.
+1. **Typed parametric core (deterministic).** The supported grammar covers number lines, equivalent fractions, common denominators, and unlike-denominator addition/subtraction. A template derives the exact accepted-answer rule; common-denominator items accept any positive common multiple, not just the least common denominator.
 2. **LLM wrap (GPT-5.6).** The model is given the fixed operands and correct answer and asked to write a word-problem context around them, explicitly forbidden to change any number or introduce a second operation. This is where GPT-5.6 is load-bearing in item creation, and it is deliberately kept in the demo path.
 3. **Validator (deterministic, mandatory).** Re-derive the answer implied by the wrapped problem and confirm it equals the parametric answer, that no extra operation was introduced, and that the declared sub-skill still holds. On any failure, discard and retry once, then fall back to the bare parametric item from step 1. Nothing reaches a learner without passing this gate.
-4. **Freeze for the demo.** Pre-generate the exact items Maya and the seeded class see, run them through the validator, and cache them keyed by `item_id`. The demo never calls generation live for a required result (§6 cache policy).
+4. **Generate and cache for the demo.** The practice-plan adapter may generate operands live for a newly created learner session. Cache each validated plan by learner, selected gap, and prompt version. If the model is unavailable or validation fails, the demo uses the frozen validated bank immediately (§6 cache policy).
 
 The number picker must be seedable/deterministic (no `Math.random()` in a way that breaks reproducibility) so a fresh seed reproduces the same demo items (§18).
 
@@ -382,9 +382,9 @@ Exact routing may evolve, but server operations must have these contracts.
 | Operation | Request | Response |
 | --- | --- | --- |
 | `POST /api/responses` | authenticated actor, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
-| `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, practice session ID |
+| `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, ordered selectable practice-plan cards |
 | `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
-| `POST /api/tutor/hint` | authenticated student, `itemId`, `attempt`, `level` | safe hint, source (`ai`, `cache`, or `fallback`) |
+| `POST /api/tutor/hint` | authenticated student, `itemId`, `practiceSessionId`, `attempt`, `level` | safe hint for a seeded or generated session item, source (`ai`, `cache`, or `fallback`) |
 | `POST /api/work-help` | authenticated student, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
