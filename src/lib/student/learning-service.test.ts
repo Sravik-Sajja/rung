@@ -81,6 +81,26 @@ describe("persisted generated-practice payload", () => {
     ]);
   });
 
+  it("includes the safe visual payload for persisted generated number-line items", () => {
+    const payload = buildPersistedGeneratedPlanPayload({
+      idFor: (prefix) => `${prefix}-id`,
+      plans: [{
+        targetSubskillId: "fraction-number-line",
+        misconceptionTag: "reverses_numerator_and_denominator",
+        title: "Read number lines",
+        reason: "Practice naming a marked point.",
+        generationSource: "fallback",
+        generationPromptVersion: "practice-plan-v1",
+        items: generatedPracticePlanFallback("fraction-number-line"),
+      }],
+    });
+    expect(payload.plans[0]?.items[0]).toMatchObject({
+      prompt: "What fraction names point C on the number line?",
+      visualSpec: { kind: "number_line", denominator: 2, markedNumerator: 1, pointLabel: "C" },
+      parametricSpec: { kind: "number_line", numerator: 1, denominator: 2 },
+    });
+  });
+
   it("treats a missed original occurrence as resolved once no pending or requeued work remains", () => {
     expect(isPracticeSessionResolved([
       { itemId: "one", status: "missed" },

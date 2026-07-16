@@ -153,9 +153,10 @@ const NUMBER_LINE_FORMS: readonly ItemForm[] = [
     return {
       id,
       subskillId: canonicalDemoSubskillIds[1],
-      prompt: `Which point is ${answer} of the way from 0 to 1?`,
+      prompt: "What fraction names point C on the number line?",
       answerSpec: { accepted: [answer] },
       distractorMap: reversed === answer ? {} : { [reversed]: "reverses_numerator_and_denominator" },
+      visualSpec: { kind: "number_line", denominator: point.denominator, markedNumerator: point.numerator, pointLabel: "C" },
     };
   },
   (random, id) => {
@@ -165,9 +166,10 @@ const NUMBER_LINE_FORMS: readonly ItemForm[] = [
     return {
       id,
       subskillId: canonicalDemoSubskillIds[1],
-      prompt: `A number line from 0 to 1 is split into ${point.denominator} equal parts. Which fraction names the mark ${point.numerator} steps from 0?`,
+      prompt: "Look at the number line. What fraction names point C?",
       answerSpec: { accepted: [answer] },
       distractorMap: reversed === answer ? {} : { [reversed]: "reverses_numerator_and_denominator" },
+      visualSpec: { kind: "number_line", denominator: point.denominator, markedNumerator: point.numerator, pointLabel: "C" },
     };
   },
 ];

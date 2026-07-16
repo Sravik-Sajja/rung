@@ -184,7 +184,7 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `class_enrollments` | Student/class membership | `class_id`, `student_id` |
 | `topics` | Top-level instructional unit | `id`, `slug`, `name` |
 | `subskills` | Fine-grained skills | `id`, `topic_id`, `slug`, `name`, `description`, `prerequisite_subskill_id` |
-| `items` | Validated diagnostic/practice questions | `id`, `subskill_id`, `item_type`, `prompt`, `answer_spec`, `solution_steps`, `difficulty`, `is_active`, `distractor_map` |
+| `items` | Validated diagnostic/practice questions | `id`, `subskill_id`, `item_type`, `prompt`, `answer_spec`, `visual_spec`, `solution_steps`, `difficulty`, `is_active`, `distractor_map` |
 | `assignments` | Teacher-assigned diagnostic | `id`, `class_id`, `topic_id`, `title`, `mode` |
 | `assignment_items` | Stable diagnostic order | `assignment_id`, `item_id`, `position` |
 | `student_responses` | Every submitted diagnostic/practice answer | `id`, `student_id`, `item_id`, `answer_raw`, `is_correct`, `context`, `diagnostic_session_id`, `practice_session_id`, `practice_session_item_id`, `submitted_at` |
@@ -270,7 +270,7 @@ For a durable learner, the server persists the complete validated 3–4 item pla
 
 Questions are **generated, not hard-coded** — but the model is limited to a typed item grammar and deterministic code owns the prompt construction and answer rule, so the model can never invent a wrong answer key. Both halves run in the demo path.
 
-1. **Typed parametric core (deterministic).** The supported grammar covers number lines, equivalent fractions, common denominators, and unlike-denominator addition/subtraction. A template derives the exact accepted-answer rule; common-denominator items accept any positive common multiple, not just the least common denominator.
+1. **Typed parametric core (deterministic).** The supported grammar covers number lines, equivalent fractions, common denominators, and unlike-denominator addition/subtraction. A template derives the exact accepted-answer rule; common-denominator items accept any positive common multiple, not just the least common denominator. A number-line item also derives a safe visual specification: equal subdivisions and a labelled marked point. Its prompt asks the learner to identify that point; it must never print the accepted fraction in the question text.
 2. **Optional LLM wrap (GPT-5.6).** The adapter can receive fixed operands and correct answer and propose a word-problem context, explicitly forbidden to change any number or introduce a second operation. This capability is not on the current seeded/rehearsal path; it must not replace a reviewed seed prompt until provenance and validator results are persisted.
 3. **Validator (deterministic, mandatory).** Re-derive the answer implied by a generated or wrapped problem and confirm it equals the parametric answer, that no extra operation was introduced, and that the declared sub-skill still holds. On any failure, discard the candidate and use the bare parametric item from step 1. Nothing reaches a learner without passing this gate.
 4. **Generate and cache for the demo.** The practice-plan adapter may generate operands live for a newly created learner session. Cache each validated plan by learner, selected gap, and prompt version. If the model is unavailable or validation fails, the demo uses the frozen validated bank immediately (§6 cache policy).
@@ -445,6 +445,8 @@ The student-facing diagnosis must distinguish between observation and interpreta
 
 Avoid labels such as “behind,” “bad at fractions,” or a calculated grade level.
 
+An item may carry a learner-safe `visualSpec`. The current `number_line` visual has a denominator, marked numerator, and point label; it is descriptive geometry only. It is sent to the student separately from the server-only answer specification and rendered as a static, accessible diagram for identification questions.
+
 ## 14. Seed dataset requirements
 
 The demo dataset is a product asset, not placeholder data.
@@ -487,6 +489,7 @@ Prioritize tests for trust boundaries over visual polish.
 
 - Fraction answer normalization and equivalence (`1/2`, `2/4`, mixed formatting as intentionally supported).
 - Item scoring cannot accept a wrong answer as correct.
+- Every number-line item has a visual specification, asks for the fraction represented by its labelled point, and does not state its accepted fraction in prompt text.
 - Diagnostic mapping selects prerequisite gaps before target-only gaps.
 - `distractor_map` resolves a seeded wrong answer to its misconception tag, and the diagnosis rejects any misconception label not backed by a collected tag.
 - Practice selection respects skill order and yields only validated items.

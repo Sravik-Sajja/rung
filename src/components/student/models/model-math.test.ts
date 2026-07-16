@@ -6,6 +6,7 @@ import {
   remapCount,
   formatFraction,
   combineBars,
+  tapFill,
 } from "./model-math";
 
 describe("snapToTick", () => {
@@ -52,6 +53,42 @@ describe("snapToTick", () => {
   it("returns 0 when the line has no width", () => {
     expect(snapToTick(300, lineLeft, 0, 4)).toBe(0);
     expect(snapToTick(300, lineLeft, -10, 4)).toBe(0);
+  });
+});
+
+describe("tapFill", () => {
+  const lineWidth = 600;
+  const parts = 3;
+
+  it("shades up to the tapped segment", () => {
+    // x=50 falls in segment 0 (0..200)
+    expect(tapFill(0, 50, lineWidth, parts)).toBe(1);
+    expect(tapFill(2, 50, lineWidth, parts)).toBe(1);
+  });
+
+  it("tapping the topmost shaded segment toggles it off", () => {
+    expect(tapFill(1, 50, lineWidth, parts)).toBe(0);
+  });
+
+  it("shades up to the last segment", () => {
+    // x=550 falls in segment 2 (400..600)
+    expect(tapFill(0, 550, lineWidth, parts)).toBe(3);
+  });
+
+  it("tapping the last shaded segment toggles it off", () => {
+    expect(tapFill(3, 550, lineWidth, parts)).toBe(2);
+  });
+
+  it("clamps a pointer left of the line to the first segment", () => {
+    expect(tapFill(0, -10, lineWidth, parts)).toBe(1);
+  });
+
+  it("clamps a pointer right of the line to the last segment", () => {
+    expect(tapFill(0, 650, lineWidth, parts)).toBe(3);
+  });
+
+  it("returns the current shaded count unchanged when the line has no width", () => {
+    expect(tapFill(2, 100, 0, parts)).toBe(2);
   });
 });
 

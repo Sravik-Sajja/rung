@@ -35,7 +35,7 @@ describe("generated practice plan validation and materialization", () => {
 
   it("creates every generated item kind through the same materializer", () => {
     const cases: Array<{ targetSubskillId: string; expectedPrompt: string }> = [
-      { targetSubskillId: "fraction-number-line", expectedPrompt: "Which point is 1/2 of the way from 0 to 1?" },
+      { targetSubskillId: "fraction-number-line", expectedPrompt: "What fraction names point C on the number line?" },
       { targetSubskillId: "equivalent-fractions", expectedPrompt: "Write a fraction equivalent to 1/3 with denominator 6." },
       { targetSubskillId: "find-common-denominator", expectedPrompt: "What is a common denominator for 1/3 and 1/4?" },
       { targetSubskillId: "add-unlike-denominators", expectedPrompt: "What is 1/3 + 1/4?" },
@@ -50,6 +50,17 @@ describe("generated practice plan validation and materialization", () => {
       });
       expect(item.prompt).toBe(testCase.expectedPrompt);
     }
+  });
+
+  it("materializes number-line plans as labelled visual questions without leaking the answer", () => {
+    const [item] = materializeGeneratedPracticePlan({
+      targetSubskillId: "fraction-number-line",
+      items: generatedPracticePlanFallback("fraction-number-line"),
+      itemIdAt: () => "number-line-visual",
+    });
+    expect(item.visualSpec).toEqual({ kind: "number_line", denominator: 2, markedNumerator: 1, pointLabel: "C" });
+    expect(item.prompt).not.toContain("1/2");
+    expect(scoreAnswer(item, "1/2")).toBe(true);
   });
 
   it("uses target-specific safe fallbacks", () => {

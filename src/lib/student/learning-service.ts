@@ -4,7 +4,7 @@ import type { AiSource, GeneratedPracticePlan } from "@/lib/ai/contracts";
 import { materializeGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 import { scoreAnswer } from "@/lib/math/scoring";
 import { collectDiagnosticEvidence, nextMasteryLevel, selectDiagnosticGap, shouldRequeue, type DiagnosticEvidence } from "@/lib/student/learning-loop";
-import type { AnswerSpec, Item, MasteryLevel } from "@/lib/types";
+import type { AnswerSpec, Item, ItemVisualSpec, MasteryLevel } from "@/lib/types";
 
 type DbItem = {
   id: string;
@@ -12,6 +12,7 @@ type DbItem = {
   prompt: string;
   answer_spec: AnswerSpec;
   distractor_map: Record<string, string> | null;
+  visual_spec?: ItemVisualSpec | null;
   difficulty?: number | null;
 };
 type AssignmentItemRow = { position: number; items: DbItem | null };
@@ -103,6 +104,7 @@ type FinalizerItem = {
   solutionSteps: string[];
   difficulty: number;
   distractorMap: Record<string, string>;
+  visualSpec?: ItemVisualSpec;
   parametricSpec: GeneratedPracticePlan["items"][number];
 };
 
@@ -125,13 +127,14 @@ function asItem(item: DbItem): Item {
     prompt: item.prompt,
     answerSpec: item.answer_spec,
     distractorMap: item.distractor_map ?? {},
+    visualSpec: item.visual_spec ?? undefined,
   };
 }
 
 async function assignmentItems(client: ConfiguredClient, assignmentId: string) {
   const { data, error } = await client
     .from("assignment_items")
-    .select("position, items(id, subskill_id, prompt, answer_spec, distractor_map, difficulty)")
+    .select("position, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)")
     .eq("assignment_id", assignmentId)
     .order("position");
   if (error) throw new Error(error.message);
@@ -288,7 +291,7 @@ export async function startPersistedDiagnostic(input: { studentId: string; assig
   if (existingError) throw new Error(existingError.message);
   const diagnosticSessionId = existing?.id ?? (await client.from("diagnostic_sessions").insert({ student_id: input.studentId, assignment_id: input.assignmentId, status: "active" }).select("id").single()).data?.id;
   if (!diagnosticSessionId) throw new Error("Could not create a diagnostic session.");
-  return { diagnosticSessionId, assignmentId: input.assignmentId, items: items.map(({ position, item }) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, position })) };
+  return { diagnosticSessionId, assignmentId: input.assignmentId, items: items.map(({ position, item }) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position })) };
 }
 
 export async function recordPersistedDiagnosticResponse(input: { diagnosticSessionId: string; studentId: string; itemId: string; answer: string }) {
@@ -413,6 +416,7 @@ export function buildPersistedGeneratedPlanPayload(input: {
       solutionSteps: solutionStepsFor(plan.items[index]),
       difficulty: index + 1,
       distractorMap: item.distractorMap,
+      visualSpec: item.visualSpec,
       parametricSpec: plan.items[index],
     }));
     return {
@@ -492,7 +496,7 @@ export async function getPersistedPractice(input: { practiceSessionId: string; s
   if (!client) return null;
   const { data: session, error: sessionError } = await client.from("practice_sessions").select("id, student_id, status").eq("id", input.practiceSessionId).maybeSingle();
   if (sessionError || !session || session.student_id !== input.studentId) throw new Error("Practice session is unavailable.");
-  const { data, error } = await client.from("practice_session_items").select("id, item_id, position, status, items(id, subskill_id, prompt, answer_spec, distractor_map, difficulty)").eq("practice_session_id", input.practiceSessionId).order("position");
+  const { data, error } = await client.from("practice_session_items").select("id, item_id, position, status, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)").eq("practice_session_id", input.practiceSessionId).order("position");
   if (error) throw new Error(error.message);
   const items = ((data ?? []) as unknown as PracticeRow[]).flatMap((row) => row.items ? [{ ...row, item: asItem(row.items) }] : []);
   const current = nextUnresolvedPracticeOccurrence(items);
@@ -509,6 +513,7 @@ export async function getPersistedPractice(input: { practiceSessionId: string; s
       itemId: row.item.id,
       subskillId: row.item.subskillId,
       prompt: row.item.prompt,
+      visualSpec: row.item.visualSpec,
       difficulty: row.items?.difficulty ?? 1,
       position: row.position,
       status: row.status,
@@ -532,7 +537,7 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
 
   const { data: occurrence, error: occurrenceError } = await client
     .from("practice_session_items")
-    .select("id, item_id, status, items(id, subskill_id, prompt, answer_spec, distractor_map, difficulty)")
+    .select("id, item_id, status, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)")
     .eq("id", input.practiceSessionItemId)
     .eq("practice_session_id", input.practiceSessionId)
     .maybeSingle();

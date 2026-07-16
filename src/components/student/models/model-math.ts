@@ -28,6 +28,16 @@ export function remapCount(count: number, oldParts: number, newParts: number): n
   return Math.min(Math.max(remapped, 0), newParts);
 }
 
+// A tap reads as "shade up to and including this segment"; tapping the topmost
+// shaded segment instead unshades it, so a student can toggle the last block
+// on and off. Boundary rounding (snapToTick) stays for drag sweeps only.
+export function tapFill(currentShaded: number, x: number, lineWidth: number, parts: number): number {
+  if (lineWidth <= 0 || parts <= 0) return currentShaded;
+  const segment = Math.min(Math.max(Math.floor((x / lineWidth) * parts), 0), parts - 1); // 0-indexed segment under the pointer
+  const fill = segment + 1;
+  return fill === currentShaded ? segment : fill;
+}
+
 export function formatFraction(count: number, parts: number): string {
   return `${count}/${parts}`;
 }

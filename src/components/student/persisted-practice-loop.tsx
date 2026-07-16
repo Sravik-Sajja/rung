@@ -5,13 +5,15 @@ import { useEffect, useRef, useState } from "react";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
+import { NumberLineQuestion } from "@/components/student/number-line-question";
 import { FractionInput, answerModeForSubskill, type FractionInputHandle } from "@/components/student/fraction-input";
 import { ItemModel } from "@/components/student/models/item-model";
 import { HintLadder, type HintLevel } from "@/components/student/hint-ladder";
 import { WorkHelpCard } from "@/components/student/work-help-card";
 import { buttonClasses } from "@/components/ui";
+import type { ItemVisualSpec } from "@/lib/types";
 
-type PracticeItem = { practiceSessionItemId: string; itemId: string; subskillId: string; prompt: string; position: number; status: "pending" | "missed" | "requeued" | "correct"; isResurfaced: boolean; peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean }; plan?: { subskillId: string; title: string; reason: string } };
+type PracticeItem = { practiceSessionItemId: string; itemId: string; subskillId: string; prompt: string; visualSpec?: ItemVisualSpec; position: number; status: "pending" | "missed" | "requeued" | "correct"; isResurfaced: boolean; peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean }; plan?: { subskillId: string; title: string; reason: string } };
 // `progress` only exists on the GET /api/practice payload — the POST /api/responses `practice`
 // object omits it — so the UI derives counts from `items` instead of reading it.
 type Practice = { session: { id: string; studentId: string; status: "active" | "complete"; currentItemId: string | null }; items: PracticeItem[]; progress?: { completedItemCount: number; totalItemCount: number } };
@@ -186,12 +188,14 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
                   </span>
                 )}
                 <FractionExpression text={current.prompt} size="lg" className="justify-center 2xl:text-4xl" />
+                {current.visualSpec?.kind === "number_line" && <NumberLineQuestion visualSpec={current.visualSpec} />}
               </div>
 
               <ItemModel
                 subskillId={current.subskillId}
                 disabled={lastCorrect}
                 onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
+                visualSpec={current.visualSpec}
               />
 
               <div className="flex flex-col items-center gap-6 border-t border-border p-8 sm:p-10 2xl:p-12">

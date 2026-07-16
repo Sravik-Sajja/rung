@@ -11,6 +11,7 @@ import {
   formatFraction,
   remapCount,
   snapToTick,
+  tapFill,
   type BarState,
 } from "./model-math";
 import { PartsStepper } from "./parts-stepper";
@@ -61,7 +62,12 @@ export function FractionBarModel({
     if (disabled) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     setDraggingIndex(index);
-    const fill = fillFromPointer(event, barStates[index].parts);
+    // A tap should toggle the segment under the pointer rather than snap to the
+    // nearest boundary, or the first segment can become unreachable by tap (see
+    // handlePointerMove/fillFromPointer for the drag-sweep behavior, unchanged).
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewBoxX = ((event.clientX - rect.left) / rect.width) * VIEW_WIDTH;
+    const fill = tapFill(barStates[index].shaded, viewBoxX, VIEW_WIDTH, barStates[index].parts);
     updateBar(index, (bar) => ({ ...bar, shaded: fill }));
   }
 
@@ -115,6 +121,15 @@ export function FractionBarModel({
               <div className="flex items-center gap-3">
                 <PartsStepper parts={bar.parts} disabled={disabled} onChange={(next) => handlePartsChange(index, next)} />
                 <Fraction numerator={bar.shaded} denominator={bar.parts} size="md" />
+                <button
+                  type="button"
+                  aria-label={`Clear ${label.toLowerCase()}`}
+                  className="text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
+                  disabled={disabled || bar.shaded === 0}
+                  onClick={() => updateBar(index, (b) => ({ ...b, shaded: 0 }))}
+                >
+                  Clear
+                </button>
               </div>
             </div>
             <div

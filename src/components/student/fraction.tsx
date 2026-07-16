@@ -53,7 +53,10 @@ function renderFractionPrompt(text: string, size: "md" | "lg"): ReactNode[] {
       const [numerator, denominator] = part.split("/");
       return <Fraction key={index} numerator={numerator} denominator={denominator} size={size} />;
     }
-    return part ? <span key={index}>{part}</span> : null;
+    // Text stays in the same inline formatting context as its adjacent
+    // fraction. The old span + flex-token layout allowed punctuation such as
+    // a leading comma to be orphaned on its own line.
+    return part || null;
   });
 }
 
@@ -70,7 +73,7 @@ export function FractionExpression({
   return (
     <span
       className={cn(
-        "inline-flex flex-wrap items-center gap-x-1.5 gap-y-2 font-bold tracking-tight text-ink",
+        "inline font-bold tracking-tight text-ink leading-[1.35]",
         size === "lg" ? "text-2xl sm:text-3xl" : "text-lg",
         className,
       )}

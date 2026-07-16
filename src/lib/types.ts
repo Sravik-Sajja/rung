@@ -30,8 +30,20 @@ export interface AnswerSpec {
   rule?: AnswerRule;
 }
 
+/**
+ * A learner-facing visual is descriptive item data, never a substitute for
+ * the server-only answer specification. Keeping this narrow makes visuals
+ * safe to persist and render in both the local and durable practice paths.
+ */
+export type ItemVisualSpec = {
+  kind: "number_line";
+  denominator: number;
+  markedNumerator: number;
+  pointLabel: string;
+};
+
 export interface DemoStudent { id: string; displayName: string; gradeBand: string; }
-export interface Item { id: string; subskillId: string; prompt: string; answerSpec: AnswerSpec; distractorMap: Record<string, string>; }
+export interface Item { id: string; subskillId: string; prompt: string; answerSpec: AnswerSpec; distractorMap: Record<string, string>; visualSpec?: ItemVisualSpec; }
 export interface Diagnosis { subskillId: string; misconceptionTag: string; observation: string; nextStep: string; }
 
 export interface Subskill { id: string; name: string; }

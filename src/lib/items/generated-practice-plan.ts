@@ -196,9 +196,10 @@ function materializeItem(input: { item: GeneratedPracticePlanItem; targetSubskil
       return {
         id: input.id,
         subskillId: input.targetSubskillId,
-        prompt: `Which point is ${item.numerator}/${item.denominator} of the way from 0 to 1?`,
+        prompt: "What fraction names point C on the number line?",
         answerSpec: { accepted: [`${item.numerator}/${item.denominator}`] },
         distractorMap: reversed === `${item.numerator}/${item.denominator}` ? {} : { [reversed]: "reverses_numerator_and_denominator" },
+        visualSpec: { kind: "number_line", denominator: item.denominator, markedNumerator: item.numerator, pointLabel: "C" },
       };
     }
     case "equivalent_fraction": {

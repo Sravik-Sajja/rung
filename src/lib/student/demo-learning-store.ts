@@ -89,7 +89,7 @@ export function startDemoDiagnostic(studentId: string = canonicalDemoIds.mayaStu
   return {
     diagnosticSessionId: run.id,
     assignmentId: run.assignmentId,
-    items: items.map((item, index) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, position: index + 1 })),
+    items: items.map((item, index) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position: index + 1 })),
   };
 }
 
@@ -208,6 +208,7 @@ export function getDemoPractice(sessionId: string, studentId: string) {
       itemId: entry.item.id,
       subskillId: entry.item.subskillId,
       prompt: entry.item.prompt,
+      visualSpec: entry.item.visualSpec,
       difficulty: 1,
       position: entry.position,
       status: entry.status,

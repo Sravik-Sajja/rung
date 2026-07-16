@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
+import { NumberLineQuestion } from "@/components/student/number-line-question";
 import { FractionInput, answerModeForSubskill, type FractionInputHandle } from "@/components/student/fraction-input";
 import { ItemModel } from "@/components/student/models/item-model";
 import { Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
+import type { ItemVisualSpec } from "@/lib/types";
 
-type DiagnosticItem = { id: string; prompt: string; subskillId: string; position: number };
+type DiagnosticItem = { id: string; prompt: string; subskillId: string; visualSpec?: ItemVisualSpec; position: number };
 type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: DiagnosticItem[] };
 
 // One short hint per subskill. Kept intentionally light — a nudge toward the method, never the
@@ -187,14 +189,16 @@ function DiagnosticContent() {
                   question, answer, help, action — no horizontal eye travel. */}
               <div key={item.id} className="animate-rise rounded-2xl border border-border bg-elevated shadow-lg">
                 {/* Question zone */}
-                <div className="flex justify-center p-8 text-center sm:p-10 2xl:p-14">
+                <div className="flex flex-col items-center justify-center gap-6 p-8 text-center sm:p-10 2xl:p-14">
                   <FractionExpression text={item.prompt} size="lg" className="justify-center 2xl:text-4xl" />
+                  {item.visualSpec?.kind === "number_line" && <NumberLineQuestion visualSpec={item.visualSpec} />}
                 </div>
 
                 <ItemModel
                   subskillId={item.subskillId}
                   disabled={recorded}
                   onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
+                  visualSpec={item.visualSpec}
                 />
 
                 {/* Answer zone: inputs mirror the stacked fraction in the prompt, the hint stays a

@@ -6,16 +6,23 @@
 // nothing at all (return null) so the card looks exactly like it does today.
 import { NumberLineModel } from "./number-line-model";
 import { FractionBarModel } from "./fraction-bar-model";
+import type { ItemVisualSpec } from "@/lib/types";
 
 export function ItemModel({
   subskillId,
   disabled,
   onUseAnswer,
+  visualSpec,
 }: {
   subskillId: string;
   disabled?: boolean;
   onUseAnswer: (answer: string) => void;
+  visualSpec?: ItemVisualSpec;
 }) {
+  // Static assessment number lines already show the relevant point. Do not
+  // layer the exploratory draggable model on top, which would make the
+  // question ambiguous and could look like a second answer mechanism.
+  if (visualSpec?.kind === "number_line") return null;
   let model: React.ReactNode;
   switch (subskillId) {
     case "fraction-number-line":

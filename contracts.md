@@ -239,6 +239,14 @@ export type MasteryLevel =
   | "developing"
   | "mastered";
 
+/** Learner-safe geometry sent separately from the server-only answer specification. */
+export type ItemVisualSpec = {
+  kind: "number_line";
+  denominator: number;
+  markedNumerator: number;
+  pointLabel: string;
+};
+
 export type SubmitResponseRequest =
   | {
       studentId: string;
@@ -309,7 +317,7 @@ export type CompleteDiagnosticResponse = {
 export type GetDiagnosticResponse = {
   diagnosticSessionId: string;
   assignmentId: string;
-  items: Array<{ id: string; prompt: string; subskillId: string; position: number }>;
+  items: Array<{ id: string; prompt: string; subskillId: string; visualSpec?: ItemVisualSpec; position: number }>;
 };
 
 export type PracticeItemCard = {
@@ -318,6 +326,7 @@ export type PracticeItemCard = {
   itemId: string;
   subskillId: string;
   prompt: string;
+  visualSpec?: ItemVisualSpec;
   difficulty: number;
   position: number;
   status: "pending" | "active" | "missed" | "requeued" | "correct";

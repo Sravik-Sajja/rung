@@ -404,7 +404,7 @@ Use this template for every meaningful change:
 ### Bugs / follow-ups
 
 - Practice-plan completion and selection are still process-local demo state; persist plan metadata and generated validated items in Supabase before deployment.
-- Number-line practice remains text-only. A future visual representation should be designed and tested separately rather than relying on a partial client-side fallback.
+- Resolved on 2026-07-16: number-line assessment items now persist a safe visual specification and render a fixed, labelled point rather than using a text-only prompt.
 
 ## 2026-07-16 - durable learner loop, temporary participant, and support trust boundary
 
@@ -432,3 +432,23 @@ Use this template for every meaningful change:
 - Production browser sign-in/session UI and authenticated teacher route checks remain unfinished. Do not treat the current non-production teacher dashboard as a production authorization implementation.
 - Temporary participant cookies expire after eight hours, but durable expired rows currently require seed/reset cleanup; no scheduled TTL cleanup job exists yet.
 - The optional item-wrap adapter exists, but the current seed/rehearsal path does not persist wrapped-prompt provenance. Keep it off that path until that follow-up is complete.
+
+## 2026-07-16 - valid number-line assessment and inline fraction layout
+
+### Completed
+
+- Replaced every text-only number-line form with a labelled Point C identification item. The learner now reads a fixed 0–1 number line and enters the fraction represented by that point; no prompt prints its accepted fraction.
+- Added migration `009_item_visual_specs.sql` and a safe `visual_spec` item field. The seed, local demo, generated-plan path, and persisted reader return the visual separately from `answer_spec`.
+- Added a read-only accessible number-line SVG and hid the exploratory draggable model whenever a fixed assessment visual is present.
+- Changed stacked fraction prompts from flex-token layout to normal inline text flow, so punctuation and surrounding words no longer detach around a fraction.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- `npm test`: 23 files / 145 tests passed.
+- `git diff --check`: passed.
+
+### Bugs / follow-ups
+
+- `npm run build` compiled and type-checked successfully but failed during page-data collection because the shared `.next` directory referenced a missing stale chunk (`331.js`). No source error was reported; stop concurrent dev/build processes or use an isolated build directory before treating this as a release build.
+- Migration `009` has not been applied to a live Supabase project in this workspace.

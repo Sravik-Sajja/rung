@@ -94,7 +94,18 @@ export function NumberLineModel({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-muted">Split the line into equal parts, then mark your point.</p>
-      <PartsStepper parts={parts} disabled={disabled} onChange={handlePartsChange} />
+      <div className="flex items-center gap-3">
+        <PartsStepper parts={parts} disabled={disabled} onChange={handlePartsChange} />
+        <button
+          type="button"
+          aria-label="Remove point"
+          className="text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
+          disabled={disabled || marked === null}
+          onClick={() => setMarked(null)}
+        >
+          Remove point
+        </button>
+      </div>
       <div
         role="slider"
         tabIndex={disabled ? -1 : 0}

@@ -67,6 +67,16 @@ describe("per-student diagnostic items", () => {
     }
   });
 
+  it("uses a labelled visual, never the accepted fraction, for number-line questions", () => {
+    for (const studentId of MANY_STUDENT_IDS) {
+      const item = buildDiagnosticItems(studentId).find((candidate) => candidate.id === "number-line-1")!;
+      expect(item.visualSpec).toMatchObject({ kind: "number_line", pointLabel: "C" });
+      expect(item.prompt).toMatch(/point C/i);
+      expect(item.prompt).not.toContain(item.answerSpec.accepted[0]);
+      expect(scoreAnswer(item, item.answerSpec.accepted[0])).toBe(true);
+    }
+  });
+
   it("draws the five questions from a bank bigger than five", () => {
     expect(DIAGNOSTIC_FORM_COUNT).toBeGreaterThan(5);
   });
