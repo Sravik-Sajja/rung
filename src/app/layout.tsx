@@ -17,7 +17,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rung — differentiated fractions practice",
+  title: "Rung: differentiated fractions practice",
   description:
     "A classroom platform that turns one assignment into a per-student diagnostic, targeted practice, and a teacher-ready small-group plan."
 };

@@ -74,13 +74,13 @@ export default function HomePage() {
           <Card className="animate-rise !bg-elevated relative overflow-hidden p-8 shadow-lg sm:p-12">
             <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:items-center">
               <div>
-                <Eyebrow>Rung · differentiated math</Eyebrow>
+                <Eyebrow>Rung</Eyebrow>
                 <h1 className="mt-3 text-balance text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
                   Meet every student on the rung they&rsquo;re actually on.
                 </h1>
                 <p className="mt-5 max-w-2xl text-lg text-ink-muted">
                   One assignment becomes a per-student diagnostic. Each student gets targeted practice on
-                  the exact sub-skill they&rsquo;re missing — with an AI tutor and a peer example that
+                  the exact sub-skill they&rsquo;re missing, with an AI tutor and a peer example that
                   unlocks only after a real attempt. Teachers get tomorrow&rsquo;s small-group plan by
                   tonight.
                 </p>
@@ -110,7 +110,7 @@ export default function HomePage() {
                   ))}
                 </ul>
                 <p className="mt-4 border-t border-border pt-3 text-xs text-ink-faint">
-                  Deterministic, stored evidence — never model-generated.
+                  Deterministic, stored evidence, never model-generated.
                 </p>
               </div>
             </div>
@@ -143,8 +143,8 @@ export default function HomePage() {
             </h2>
             <p className="mt-3 max-w-2xl text-ink-muted lg:mx-auto">
               Every diagnostic rolls up into a class-wide mastery heatmap. Rung clusters students by
-              shared gaps automatically and hands you a ready small-group plan for tomorrow morning
-              — not another dashboard to interpret at 11pm.
+              shared gaps automatically and hands you a ready small-group plan for tomorrow morning,
+              not another dashboard to interpret at 11pm.
             </p>
           </div>
 
@@ -219,7 +219,7 @@ export default function HomePage() {
               Meet your students where they are.
             </h2>
             <p className="mt-4 text-lg text-ink-muted">
-              Practice, not a test — try the student loop yourself, or open the class view
+              Practice, not a test: try the student loop yourself, or open the class view
               teachers check before tomorrow&rsquo;s lesson.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

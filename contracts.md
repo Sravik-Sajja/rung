@@ -28,7 +28,26 @@ export type Actor =
 - A student request carrying `studentId` is valid only when it equals `Actor.studentId`; new production clients should omit it where the route can derive it.
 - Teachers may access only classes they teach and plans/snapshots created for those classes.
 - The Supabase service role is never used in browser code and is not a substitute for a user session in normal routes.
-- `DEMO_MODE` is disabled in production. In non-production it may resolve only an allow-listed, fictional seed identity; it must produce the same `Actor` shape and authorization checks as production.
+- `DEMO_MODE` is disabled in production. In non-production, a server-created temporary participant is bound to an opaque httpOnly cookie and may access only that learner's records; an explicitly allow-listed fictional seed identity (including Maya) remains a prepared fallback. A URL/body `studentId` is a consistency assertion, never the source of identity.
+
+### Temporary walkthrough participant
+
+`POST /api/demo/participant` accepts `{ displayName }` (a 1–32 character first name or nickname) only while non-production demo mode is enabled. It creates a fictional student, enrollment, and initial `not_started` mastery matrix, returns public participant fields, and sets the opaque cookie. The raw cookie token is never returned in JSON.
+
+```ts
+export type DemoParticipant = {
+  studentId: string;
+  displayName: string;
+  gradeBand: string;
+  classId: string;
+  expiresAt: string;
+};
+
+export type GetDemoParticipantResponse = { participant: DemoParticipant | null };
+export type CreateDemoParticipantResponse = { participant: DemoParticipant };
+```
+
+`GET /api/demo/participant` returns `404` with `participant: null` when no cookie is present, and `401` for invalid or expired cookies. It never silently substitutes Maya. A temporary session lasts eight hours; the current seed reset removes durable temporary records, while background expiry cleanup is not yet implemented.
 
 ## AI adapter
 
@@ -46,9 +65,13 @@ export type AiFeature =
 /** Environment-configured, allow-listed production model routes. */
 export type AiModelRoute = "gpt-5.6-luna" | "gpt-5.6-terra";
 
+export type AnswerRule =
+  | { kind: "positive_common_multiple"; denominators: readonly [number, number] }
+  | { kind: "exact_denominator"; denominator: number };
+
 export type AnswerSpec = {
-  validation: "rational_equivalence";
-  canonical: { numerator: number; denominator: number };
+  accepted: string[];
+  rule?: AnswerRule;
 };
 
 export type DiagnosisEvidence = {
@@ -117,6 +140,8 @@ export type AnalyzeWorkInput = {
   writtenWork: string;
   imageDataUrl?: string;
   protectedAnswers: string[];
+  /** Server-only accepted-answer variants derived from the item's answer rule. */
+  protectedAnswerRule?: AnswerRule;
   protectedSolutionSteps: string[];
   promptVersion: string;
 };
@@ -203,7 +228,7 @@ Every adapter invocation—AI, cache, fallback, or safety rejection—creates an
 
 ### Item-wrap invariant
 
-`wrapItem` may alter only the learner-facing prompt. The parametric item's ID, operands, answer specification, distractor map, sub-skill, difficulty, solution steps, and computed answer remain unchanged. Re-freezing updates the prompt at the existing item ID; it never creates a new item.
+`wrapItem` may alter only the learner-facing prompt. The parametric item's ID, operands, answer specification, distractor map, sub-skill, difficulty, solution steps, and computed answer remain unchanged. It is an adapter capability, not the current seeded/rehearsal path. Before it can update a prompt, its validator result and provenance must be persisted at the existing item ID; it never creates a new item.
 
 ## Student API
 
@@ -220,7 +245,8 @@ export type SubmitResponseRequest =
       itemId: string;
       answer: string;
       context: "diagnostic";
-      assignmentId: string;
+      diagnosticSessionId: string;
+      usedHint?: boolean;
     }
   | {
       studentId: string;
@@ -228,23 +254,24 @@ export type SubmitResponseRequest =
       answer: string;
       context: "practice";
       practiceSessionId: string;
+      practiceSessionItemId: string;
     };
 
-export type SubmitResponseResponse = {
+export type SubmitDiagnosticResponse = {
   isCorrect: boolean;
-  normalizedAnswer: { submitted: string; canonicalRational: string | null };
+  normalizedAnswer: string;
   responseId: string;
-  feedback: { kind: "correct" | "try_again"; message: string };
-  progress: {
-    completedItemCount: number;
-    totalItemCount: number;
-    nextItemId: string | null;
-    itemStatus?: "correct" | "missed" | "requeued";
-    fullSolutionUnlocked?: boolean;
-  };
 };
 
-export type CompleteDiagnosticRequest = { studentId: string };
+export type SubmitPracticeResponse = SubmitDiagnosticResponse & {
+  masteryLevel: MasteryLevel;
+  fullSolutionUnlocked?: boolean;
+  practice: GetPracticeResponse;
+};
+
+export type SubmitResponseResponse = SubmitDiagnosticResponse | SubmitPracticeResponse;
+
+export type CompleteDiagnosticRequest = { studentId: string; diagnosticSessionId: string };
 
 export type CompleteDiagnosticResponse = {
   diagnosis: {
@@ -267,17 +294,27 @@ export type CompleteDiagnosticResponse = {
     firstItemId: string;
     itemCount: number;
   };
-  /** One independently selectable plan for each missed sub-skill, prerequisite-first. */
-  practicePlans: Array<{ id: string; title: string; reason: string; itemCount: number }>;
+  /** One independently selectable plan for each missed sub-skill, prerequisite-first. Array order is authoritative. */
+  practicePlans: Array<{
+    id: string;
+    targetSubskillId: string;
+    title: string;
+    reason: string;
+    itemCount: number;
+    firstItemId?: string;
+    status?: "active" | "complete";
+  }>;
 };
 
 export type GetDiagnosticResponse = {
+  diagnosticSessionId: string;
   assignmentId: string;
-  item: { id: string; prompt: string; subskillId: string; position: number } | null;
-  progress: { completedItemCount: number; totalItemCount: number };
+  items: Array<{ id: string; prompt: string; subskillId: string; position: number }>;
 };
 
 export type PracticeItemCard = {
+  /** Exact session occurrence; required for scoring and support-state requests. */
+  practiceSessionItemId: string;
   itemId: string;
   subskillId: string;
   prompt: string;
@@ -302,9 +339,10 @@ export type GetPracticeResponse = {
 
 export type TutorHintRequest = {
   studentId: string;
-  itemId: string;
-  /** Required for generated items so the server resolves its trusted session record. */
-  practiceSessionId?: string;
+  /** Optional compatibility field; never used to resolve a session-owned item. */
+  itemId?: string;
+  practiceSessionId: string;
+  practiceSessionItemId: string;
   attempt: string;
   level: HintLevel;
 };
@@ -314,7 +352,10 @@ export type TutorHintResponse = TutorHint & { itemId: string };
 /** Multipart form fields. `photo` is optional JPEG/PNG/WebP, max 5 MiB. */
 export type WorkHelpRequest = {
   studentId: string;
-  itemId: string;
+  /** Optional compatibility field; never used to resolve a session-owned item. */
+  itemId?: string;
+  practiceSessionId: string;
+  practiceSessionItemId: string;
   writtenWork: string;
   supportLevel: "hint" | "guided_step";
   photo?: File;
@@ -324,6 +365,8 @@ export type WorkHelpResponse = WorkAnalysis & {
   itemId: string;
   supportLevel: "hint" | "guided_step";
 };
+
+The session-owned `practiceSessionId` + `practiceSessionItemId` form is the canonical tutor/work-help contract. The server authenticates ownership, resolves the item from the current occurrence, and records support events itself. A legacy catalog-only tutor hint may remain temporarily for old seed surfaces, but it cannot resolve generated content; catalog-only work help is rejected.
 
 /** Legacy-only contract retained while old demo endpoints are removed. */
 export type PeerAttemptRequest = {
@@ -405,7 +448,7 @@ export type GetStudentMasteryResponse = {
 
 ### Target production teacher behavior
 
-After the Auth/RLS route rollout, production teacher routes query Supabase through an authenticated teacher session and RLS-compatible class-membership checks. Deterministic fixture projections are available only to the isolated non-production demo flow. The current route handlers still need that session extraction and actor validation wired before this becomes enforced behavior.
+Production student handlers resolve a Bearer Supabase access token and verify the linked learner. The browser sign-in/session UI is not yet implemented. Teacher dashboard and group-plan routes remain demo-read paths until an authenticated teacher-session and RLS-compatible membership check are wired; they must not be exposed as production teacher endpoints before then.
 
 - `GET /api/classes/fractions-demo-class/dashboard` returns the canonical eight fictional students, five fraction sub-skills, their mastery cells, and deterministic support groups. Maya, Diego, and Zara form the `find-common-denominator` needs-support cohort.
 - `GET /api/teacher-groups/:groupId/plan` returns a seeded/cached 15–18 minute plan with matched bank-item IDs and a resource record. The seeded group membership and cached plan are read-only in the current endpoint; a future selection workflow must create its own dated snapshot.
@@ -419,12 +462,14 @@ Track A owns these handlers or equivalent server actions:
 
 | Route | Request | Response |
 | --- | --- | --- |
+| `GET /api/demo/participant` | non-production opaque participant cookie | `GetDemoParticipantResponse` or missing/expired/invalid status |
+| `POST /api/demo/participant` | non-production `{ displayName }` | `CreateDemoParticipantResponse` plus opaque httpOnly cookie |
 | `POST /api/responses` | authenticated student + `SubmitResponseRequest` | `SubmitResponseResponse` |
 | `GET /api/diagnostics/:assignmentId` | authenticated student | `GetDiagnosticResponse` |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student + `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
 | `GET /api/practice/:sessionId` | authenticated student | `GetPracticeResponse` |
-| `POST /api/tutor/hint` | authenticated student + `TutorHintRequest` | `TutorHintResponse` |
-| `POST /api/work-help` | authenticated student + multipart `WorkHelpRequest` | `WorkHelpResponse` |
+| `POST /api/tutor/hint` | authenticated student + `TutorHintRequest`; server resolves the owned exact occurrence | `TutorHintResponse` |
+| `POST /api/work-help` | authenticated student + multipart `WorkHelpRequest`; server records/claims the earned exact-occurrence support state | `WorkHelpResponse` |
 | `POST /api/peer-attempts` / `GET /api/peer-solutions/:itemId` | legacy only; must not be called by the current student UI | legacy peer contracts |
 | `GET /api/students/:studentId/mastery?topicId=...` | authenticated student; ID must match actor | `GetStudentMasteryResponse` |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher assigned to class | `ClassDashboardResponse` |

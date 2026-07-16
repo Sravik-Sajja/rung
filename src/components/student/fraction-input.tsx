@@ -6,10 +6,17 @@
 // shape themselves if the default guessed wrong. Either way it composes the same plain string the
 // scoreAnswer contract already expects ("num/den" or just "num"), so everything downstream works
 // unchanged.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { buttonClasses, cn } from "@/components/ui";
 
 export type AnswerMode = "fraction" | "whole";
+
+// Imperative escape hatch for the deliberately-uncontrolled input: callers (e.g. "Use as my
+// answer" from work-help) need to push a one-shot value in without turning this into a
+// controlled component, the same way form.requestSubmit() is used for one-shot submission.
+export interface FractionInputHandle {
+  setAnswer(value: string): void;
+}
 
 // Subskills whose expected answer is a single whole number (e.g. "find the common denominator")
 // rather than a fraction — used to pick a sensible `defaultMode` per item so the student isn't
@@ -28,6 +35,7 @@ export function FractionInput({
   showSubmit = true,
   defaultMode = "fraction",
   className,
+  ref,
 }: {
   onSubmit: (answer: string) => void;
   disabled?: boolean;
@@ -39,6 +47,8 @@ export function FractionInput({
   /** Which answer shape the toggle starts on; the student can still switch. */
   defaultMode?: AnswerMode;
   className?: string;
+  /** Optional imperative handle (React 19 ref-as-prop) for one-shot answer injection; see FractionInputHandle. */
+  ref?: Ref<FractionInputHandle>;
 }) {
   const [mode, setMode] = useState<AnswerMode>(defaultMode);
   const [numerator, setNumerator] = useState("");
@@ -62,6 +72,29 @@ export function FractionInput({
     if (next === "whole") setDenominator(""); // a stale denominator must not leak into a whole-number answer
     focusPending.current = true;
   }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setAnswer(value) {
+        if (value.includes("/")) {
+          const [n, d] = value.split("/");
+          setMode("fraction");
+          setNumerator(n);
+          setDenominator(d);
+        } else {
+          setMode("whole");
+          setNumerator(value);
+          setDenominator(""); // mirrors toggleMode's stale-denominator guard so it can't leak into a whole-number answer
+        }
+        // focusPending covers the mode-change case (the [mode] effect below fires); that effect is a
+        // no-op when the mode doesn't change, so also focus directly here to cover same-mode refills.
+        focusPending.current = true;
+        numeratorRef.current?.focus();
+      },
+    }),
+    [],
+  );
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

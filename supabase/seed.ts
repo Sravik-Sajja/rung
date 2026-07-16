@@ -85,6 +85,15 @@ async function seed() {
   await assertNoError(await supabase.from("subskills").upsert(subskills.filter((subskill) => subskill.prerequisite_subskill_id !== null)));
   await assertNoError(await supabase.from("students").upsert(students));
   await assertNoError(await supabase.from("classes").upsert({ id: classId, name: "Ms. Rivera's fractions class", teacher_display_name: teacherName }));
+  // Capture temporary learners before resetting enrollment rows. They are
+  // deleted later in FK-safe order alongside all of their runtime records.
+  // This makes a reset complete even if a previous walkthrough was interrupted.
+  const temporarySessions = await assertNoError(await supabase
+    .from("demo_participant_sessions")
+    .select("student_id")
+    .eq("class_id", classId));
+  const temporaryStudentIds = [...new Set(temporarySessions.map((session) => session.student_id))];
+  const studentIds = [...new Set([...students.map((student) => student.id), ...temporaryStudentIds])];
   await assertNoError(await supabase.from("class_enrollments").delete().eq("class_id", classId));
   await assertNoError(await supabase.from("class_enrollments").upsert(students.map((student) => ({ class_id: classId, student_id: student.id }))));
   await assertNoError(await supabase.from("items").upsert(items));
@@ -92,7 +101,6 @@ async function seed() {
   await assertNoError(await supabase.from("assignment_items").delete().eq("assignment_id", diagnosticAssignmentId));
   await assertNoError(await supabase.from("assignment_items").upsert(canonicalDiagnosticItemIds.map((itemId, index) => ({ assignment_id: diagnosticAssignmentId, item_id: itemId, position: index + 1 }))));
 
-  const studentIds = students.map((student) => student.id);
   const groups = await assertNoError(await supabase.from("teacher_groups").select("id").eq("class_id", classId));
   const groupIds = groups.map((group) => group.id);
   if (groupIds.length) {
@@ -101,16 +109,33 @@ async function seed() {
     await assertNoError(await supabase.from("teacher_groups").delete().eq("class_id", classId));
   }
 
+  // Reset all learner-owned runtime state in dependency order. Generated
+  // practice items are intentionally not part of the reusable seed bank, so
+  // remove their provenance rows/items before their practice sessions vanish.
+  const diagnosticSessions = await assertNoError(await supabase.from("diagnostic_sessions").select("id").in("student_id", studentIds));
+  const diagnosticSessionIds = diagnosticSessions.map((session) => session.id);
   const sessions = await assertNoError(await supabase.from("practice_sessions").select("id").in("student_id", studentIds));
   const sessionIds = sessions.map((session) => session.id);
+  await assertNoError(await supabase.from("student_responses").delete().in("student_id", studentIds));
   if (sessionIds.length) {
     await assertNoError(await supabase.from("practice_session_items").delete().in("practice_session_id", sessionIds));
+    const generatedItems = await assertNoError(await supabase.from("generated_practice_items").select("item_id").in("practice_plan_id", sessionIds));
+    const generatedItemIds = generatedItems.map((item) => item.item_id);
+    if (generatedItemIds.length) {
+      await assertNoError(await supabase.from("items").delete().in("id", generatedItemIds));
+    }
     await assertNoError(await supabase.from("practice_sessions").delete().in("id", sessionIds));
   }
-  await assertNoError(await supabase.from("student_responses").delete().in("student_id", studentIds));
+  if (diagnosticSessionIds.length) {
+    await assertNoError(await supabase.from("diagnostic_sessions").delete().in("id", diagnosticSessionIds));
+  }
   await assertNoError(await supabase.from("attempt_submissions").delete().in("student_id", studentIds));
   await assertNoError(await supabase.from("peer_unlocks").delete().in("student_id", studentIds));
   await assertNoError(await supabase.from("mastery").delete().in("student_id", studentIds));
+  if (temporaryStudentIds.length) {
+    await assertNoError(await supabase.from("demo_participant_sessions").delete().in("student_id", temporaryStudentIds));
+    await assertNoError(await supabase.from("students").delete().in("id", temporaryStudentIds));
+  }
 
   const masteryRows = students.flatMap((student) => canonicalDemoSubskillIds.map((subskillId, index) => {
     const level = masteryLevelsByStudent[student.id][index];

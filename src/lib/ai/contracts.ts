@@ -43,6 +43,34 @@ export const tutorHintSchema = metaSchema.extend({
 });
 export type TutorHint = z.infer<typeof tutorHintSchema>;
 
+/**
+ * Private, server-derived context used only to reject unsafe tutor output.
+ * It must never be included in a model message, cached payload, or ai_run.
+ */
+export const tutorHintProtectionSchema = z.object({
+  protectedAnswers: z.array(z.string().trim().min(1).max(200)).min(1).max(16),
+  protectedAnswerRule: z.object({
+    kind: z.literal("positive_common_multiple"),
+    denominators: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+  }).optional(),
+  protectedSolutionSteps: z.array(z.string().trim().min(1).max(500)).max(24),
+});
+export type TutorHintProtection = z.infer<typeof tutorHintProtectionSchema>;
+
+/**
+ * The tutor adapter receives a safe prompt item plus private leak-protection
+ * data. Only the safe fields may cross the model/cache/ai_run boundary.
+ */
+export const tutorHintInputSchema = z.object({
+  studentId: z.string().min(1),
+  item: safeItemSchema,
+  attempt: z.string().max(4_000),
+  level: hintLevelSchema,
+  promptVersion: z.string().min(1),
+  protection: tutorHintProtectionSchema,
+});
+export type TutorHintInput = z.infer<typeof tutorHintInputSchema>;
+
 export const attemptVerificationSchema = metaSchema.extend({
   onTopic: z.boolean(),
   nonTrivial: z.boolean(),
@@ -87,17 +115,35 @@ export const analyzeWorkInputSchema = z.object({
     .regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=\r\n]+$/, "Use a JPEG, PNG, or WebP image data URL.")
     .optional(),
   protectedAnswers: z.array(z.string().min(1).max(200)).min(1).max(16),
+  protectedAnswerRule: z.object({
+    kind: z.literal("positive_common_multiple"),
+    denominators: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+  }).optional(),
   protectedSolutionSteps: z.array(z.string().min(1).max(500)).max(24),
   promptVersion: z.string().min(1),
 });
 export type AnalyzeWorkInput = z.infer<typeof analyzeWorkInputSchema>;
+
+export const answerSpecSchema = z.object({
+  accepted: z.array(z.string().min(1)).min(1),
+  rule: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("positive_common_multiple"),
+      denominators: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+    }),
+    z.object({
+      kind: z.literal("exact_denominator"),
+      denominator: z.number().int().positive(),
+    }),
+  ]).optional(),
+});
 
 export const parametricItemSchema = z.object({
   id: z.string().min(1),
   subskillId: z.string().min(1),
   difficulty: z.number().int().positive(),
   prompt: z.string().min(1),
-  answerSpec: z.object({ accepted: z.array(z.string().min(1)).min(1) }),
+  answerSpec: answerSpecSchema,
   distractorMap: z.record(z.string()),
 });
 export type ParametricItem = z.infer<typeof parametricItemSchema>;
@@ -125,7 +171,7 @@ export type GeneratedPracticePlan = z.infer<typeof generatedPracticePlanSchema>;
 
 export interface RungAiAdapter {
   diagnoseExplanation(input: { studentId: string; assignmentId: string; gradeBand: string; targetSubskillId: string; supportedMisconceptionTags: string[]; evidence: DiagnosisEvidence[]; promptVersion: string }): Promise<DiagnosisExplanation>;
-  tutorHint(input: { studentId: string; item: SafeItem; attempt: string; level: HintLevel; promptVersion: string }): Promise<TutorHint>;
+  tutorHint(input: TutorHintInput): Promise<TutorHint>;
   verifyAttempt(input: { studentId: string; item: SafeItem; attemptText: string; explanation: string; normalizedAttemptText: string; promptVersion: string }): Promise<AttemptVerification>;
   analyzeWork(input: AnalyzeWorkInput): Promise<WorkAnalysis>;
   generatePracticePlan(input: { studentId: string; targetSubskillId: string; misconceptionTags: string[]; promptVersion: string }): Promise<GeneratedPracticePlan>;

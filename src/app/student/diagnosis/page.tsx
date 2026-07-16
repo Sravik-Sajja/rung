@@ -10,13 +10,14 @@ import { canonicalDemoIds } from "@/lib/demo/contracts";
 type CompletedDiagnostic = {
   diagnosis: { selectedSubskillId: string; misconceptionTag: string; observation: string; explanation: string; nextStep: string; explanationSource: string };
   practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number };
-  practicePlans?: Array<{ id: string; title: string; reason: string; itemCount: number }>;
+  practicePlans?: Array<{ id: string; targetSubskillId?: string; title: string; reason: string; itemCount: number; firstItemId?: string; status?: "active" | "complete" }>;
 };
 
 function DiagnosisContent() {
   const params = useSearchParams();
   const diagnosticSessionId = params.get("diagnosticSessionId");
   const completedPlanId = params.get("completedPlan");
+  const studentId = params.get("studentId") ?? canonicalDemoIds.mayaStudentId;
   const [result, setResult] = useState<CompletedDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completedPlanIds, setCompletedPlanIds] = useState<Set<string>>(new Set());
@@ -29,21 +30,21 @@ function DiagnosisContent() {
     fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId }),
+      body: JSON.stringify({ studentId, diagnosticSessionId }),
     }).then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
       .then(setResult)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not create practice"));
-  }, [diagnosticSessionId]);
+  }, [diagnosticSessionId, studentId]);
 
   useEffect(() => {
     if (!result?.practicePlans?.length) return;
     Promise.all(result.practicePlans.map(async (plan) => {
-      const response = await fetch(`/api/practice/${plan.id}?studentId=${canonicalDemoIds.mayaStudentId}`);
+      const response = await fetch(`/api/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}`);
       if (!response.ok) return null;
       const practice = await response.json() as { session?: { status?: string } };
       return practice.session?.status === "complete" ? plan.id : null;
     })).then((ids) => setCompletedPlanIds(new Set(ids.filter((id): id is string => Boolean(id)))));
-  }, [result]);
+  }, [result, studentId]);
 
   return (
     <StudentShell size="wide">
@@ -54,7 +55,7 @@ function DiagnosisContent() {
             <h1 className="text-balance text-3xl font-extrabold tracking-tight text-ink sm:text-4xl 2xl:text-5xl">
               Here&rsquo;s your next climb.
             </h1>
-            <p className="mt-4 text-ink-muted 2xl:text-lg">Not a grade — just the one skill that makes the next fraction problems click.</p>
+            <p className="mt-4 text-ink-muted 2xl:text-lg">Not a grade, just the one skill that makes the next fraction problems click.</p>
           </aside>
 
           <div className="mx-auto w-full max-w-3xl">
@@ -67,8 +68,8 @@ function DiagnosisContent() {
                 <div className="animate-rise rounded-xl border border-spark bg-spark-soft p-6"><p className="mb-2 font-mono text-xs font-medium uppercase tracking-wider text-spark-ink">Next step</p><p className="text-ink">{result.diagnosis.nextStep}</p></div>
                 <div className="grid gap-3">{(result.practicePlans?.length ? result.practicePlans : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }]).map((plan) => {
                   const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
-                  const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&completedPlan=${encodeURIComponent(plan.id)}`;
-                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
+                  const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId)}&completedPlan=${encodeURIComponent(plan.id)}`;
+                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
                 })}</div>
               </div>
             )}

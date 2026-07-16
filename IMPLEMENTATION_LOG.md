@@ -2,19 +2,21 @@
 
 This is the shared factual handoff log for the current prototype. Update it when work merges, when a contract changes, or when a bug is found or resolved. `architecture.md` remains the product and architecture source of truth.
 
-## Current delivery checklist (2026-07-15)
+## Current delivery checklist (2026-07-16)
 
 This is the short operational view of what remains. The dated entries below are the detailed factual history. Mark an item complete only after its validation is recorded in a new dated entry.
 
 ### Required before a deployable demo
 
-- [ ] **Replace Maya as the primary entry path with a dynamic walkthrough participant.** The visitor enters a first name or nickname, receives a server-generated temporary student identity, and sees their own results in the class dashboard. **Approved fallback:** retain Maya as a secondary “View the prepared Maya walkthrough” link for rehearsals and recovery.
-- [ ] **Wire the rendered hint ladder to `/api/tutor/hint`.** The work-help escalation is mounted after a recorded miss -> requested `hint`/`guided_step` -> another miss, and the visible peer gate is removed. The remaining route wiring must replace the component's temporary local hint copy with the item-specific endpoint response.
-- [ ] **Unify local demo state during the transition to Supabase.** The active diagnostic/practice path uses `demo-learning-store`; legacy peer unlocks still use `demo-flow`. Scoring, mastery, and the visible work-help condition must resolve from one server-owned state source before deployment.
+- [x] **Replace Maya as the primary entry path with a dynamic walkthrough participant.** The visitor enters a first name or nickname, receives a server-generated temporary student identity, and sees their own results in the class dashboard. **Approved fallback:** Maya remains a secondary “View the prepared Maya walkthrough” link for rehearsals and recovery.
+- [x] **Wire the rendered hint ladder to `/api/tutor/hint`.** The work-help escalation is server-enforced after miss -> requested `hint`/`guided_step` -> another miss, and the current Student UI does not render the retired peer gate.
+- [x] **Unify the active learner loop's storage boundary.** `requireStudentActor` dispatches every current student path to either the isolated local fallback or the durable Supabase path; a durable temporary participant never falls into local state. Legacy peer endpoints remain compatibility-only and are not part of the current Student UI.
 - [ ] **Run the full Maya rehearsal.** Five-question diagnostic -> evidence-based diagnosis -> selected practice -> safe hint ladder -> recorded miss + work-help response -> deterministic correct answer -> updated mastery visible in the teacher heatmap.
-- [ ] **Run a clean production build.** Stop all concurrent `next dev` processes first, then run `npm.cmd run build` against a clean `.next` directory and record the result.
-- [ ] **Exercise the real Supabase deployment path.** Apply migrations through `005`, run the deterministic seed, configure auth, test RLS as a student and teacher, and set `DEMO_MODE=false` for the deployed environment.
+- [x] **Run a clean production build.** `npm.cmd run build` passed on 2026-07-16 after source/type checking and static-page generation.
+- [ ] **Exercise the real Supabase deployment path.** Apply migrations through `008`, run the deterministic seed, configure auth, test RLS as a student and teacher, and set `DEMO_MODE=false` for the deployed environment.
+- [ ] **Finish production browser authentication and teacher authorization.** Production student handlers require a Supabase Auth access token, but the browser sign-in/session UI and production teacher route checks are not yet complete.
 - [ ] **Verify live AI and failure behavior.** Configure the OpenAI key/model, confirm `ai_runs` logging and cache reads, then rehearse the safe fallback with the model unavailable.
+- [ ] **Add temporary-learner expiry cleanup before any non-demo retention claim.** The cookie expires after eight hours; durable rows are currently cleared by seed/reset, not a scheduled job.
 
 ### Recommended after the demo is stable
 
@@ -29,7 +31,8 @@ This is the short operational view of what remains. The dated entries below are 
 - [x] Five-question diagnostic, deterministic diagnosis/practice selection, mastery updates, and one-time resurfacing.
 - [x] AI adapter contracts, Zod validation, cache/fallback behavior, leakage tests, and `ai_runs` integration.
 - [x] Server-only work-help boundary: optional request-only photo analysis, protected-answer leak checks, and safe fallback.
-- [x] Reload-safe local diagnostic/practice sessions plus the primary Maya content pack.
+- [x] Durable generated-plan finalization/order, support-state claim boundary, and temporary participant migration.
+- [x] Reload-safe local diagnostic/practice sessions plus the Maya baseline content pack and dynamic walkthrough entry.
 
 ## 2026-07-14 — baseline before Phase 0
 
@@ -402,3 +405,30 @@ Use this template for every meaningful change:
 
 - Practice-plan completion and selection are still process-local demo state; persist plan metadata and generated validated items in Supabase before deployment.
 - Number-line practice remains text-only. A future visual representation should be designed and tested separately rather than relying on a partial client-side fallback.
+
+## 2026-07-16 - durable learner loop, temporary participant, and support trust boundary
+
+### Completed
+
+- Added migration `006_generated_practice_plans.sql`: durable diagnostic completions, validated generated practice items, and an explicit `practice_plans.position` so a retry always returns the same prerequisite-first plan order rather than relying on timestamps.
+- Added migration `007_practice_support_boundary.sql`: occurrence-linked response records, immutable support events/state, and server-only atomic work-help claim/release procedures. It records only support metadata; raw typed work and photos are never stored.
+- Added migration `008_demo_participants.sql` and `GET`/`POST /api/demo/participant`: a visitor's name creates a fictional temporary learner, enrollment, initial mastery matrix, and hashed opaque session. Maya remains a deliberate no-cookie rehearsal fallback; invalid/expired participant sessions do not become Maya.
+- Routed diagnostic, response, practice, mastery, tutor-hint, and work-help handlers through an explicit local-demo versus durable store decision. A durable temporary learner's updates now use Supabase and can reach the teacher heatmap.
+- Tightened the support sequence to `miss -> hint/guided_step -> later miss -> one claim`; a nudge alone cannot unlock work help, and a failed AI request releases the claim.
+- Extended generated-item leak protection with the server-derived answer rule and persisted solution steps, then updated `architecture.md`, `contracts.md`, and `README.md` to match the actual contracts and limits.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- `npm test`: 23 files / 135 tests passed.
+- `npm run build`: passed (12 static pages generated; dynamic student/teacher/API routes compiled).
+- `git diff --check`: passed after the final documentation updates.
+- Browser smoke (read-only): `/demo` rendered the temporary-learner name field, disabled start state, and explicit Maya fallback link. The mutation path is covered by route tests; no browser-created learner was added during this check.
+
+### Bugs / follow-ups
+
+- Supabase CLI/`psql` is not available in this workspace. Migrations `006`–`008` were statically reviewed but not applied to a live project.
+- No live `OPENAI_API_KEY` or verified-cache rehearsal occurred here; tested fallbacks remain the required demo-safe behavior.
+- Production browser sign-in/session UI and authenticated teacher route checks remain unfinished. Do not treat the current non-production teacher dashboard as a production authorization implementation.
+- Temporary participant cookies expire after eight hours, but durable expired rows currently require seed/reset cleanup; no scheduled TTL cleanup job exists yet.
+- The optional item-wrap adapter exists, but the current seed/rehearsal path does not persist wrapped-prompt provenance. Keep it off that path until that follow-up is complete.

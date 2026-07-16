@@ -2,10 +2,14 @@
 import { AppShell } from "@/components/app-shell";
 import { DashboardView } from "@/components/teacher/dashboard-view";
 import { PageHeader } from "@/components/ui";
-import { getDemoTeacherDashboard } from "@/lib/teacher/grouping";
+import { getTeacherDashboard } from "@/lib/teacher/repository";
 
-export default function DashboardPage() {
-  const dashboard = getDemoTeacherDashboard();
+// The walkthrough participant is added at runtime, so this page must not be
+// statically cached between the student and teacher moments of the demo.
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const dashboard = await getTeacherDashboard();
 
   if (!dashboard) {
     return (
@@ -22,7 +26,7 @@ export default function DashboardPage() {
   return (
     <AppShell active="teacher" width="wide">
       <PageHeader
-        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence — never model-generated. This prototype is not for grading.`}
+        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence, never model-generated. This prototype is not for grading.`}
         eyebrow="Teacher · fractions class"
         title="Ms. Rivera's fractions class"
       />

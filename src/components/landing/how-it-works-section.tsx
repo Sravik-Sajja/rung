@@ -8,12 +8,12 @@ const studentLoop: Array<{ n: string; title: string; body: string }> = [
   {
     n: "01",
     title: "Diagnostic",
-    body: "One graded assignment becomes a short adaptive diagnostic — a handful of questions calibrated to find exactly where understanding breaks down, not just whether the final answer was right."
+    body: "One graded assignment becomes a short adaptive diagnostic: a handful of questions calibrated to find exactly where understanding breaks down, not just whether the final answer was right."
   },
   {
     n: "02",
     title: "Sub-skill diagnosis",
-    body: "Not “needs help with fractions.” Rung names the specific sub-skill — common denominators when adding mixed numbers — so practice can start on the actual gap."
+    body: "Not “needs help with fractions.” Rung names the specific sub-skill (common denominators when adding mixed numbers) so practice can start on the actual gap."
   },
   {
     n: "03",
@@ -23,7 +23,7 @@ const studentLoop: Array<{ n: string; title: string; body: string }> = [
   {
     n: "04",
     title: "AI tutor hint ladder",
-    body: "Stuck on a problem? Hints escalate — a nudge, a worked step, a full explanation — always short of the answer, so the student still does the reasoning."
+    body: "Stuck on a problem? Hints escalate (a nudge, a worked step, a full explanation), always short of the answer, so the student still does the reasoning."
   },
   {
     n: "05",
@@ -33,7 +33,7 @@ const studentLoop: Array<{ n: string; title: string; body: string }> = [
   {
     n: "06",
     title: "Mastery",
-    body: "The student clears the sub-skill with evidence from their own work, not a self-report — and moves on to the next rung."
+    body: "The student clears the sub-skill with evidence from their own work, not a self-report, and moves on to the next rung."
   }
 ];
 

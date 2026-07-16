@@ -37,7 +37,7 @@ export function PracticeFlow({ sessionId }: { sessionId: string }) {
     const response = await fetch("/api/responses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentId: "maya-chen", itemId: currentItem.itemId, answer, context: "practice", practiceSessionId: sessionId }) });
     const result = await response.json();
     if (!response.ok) return setMessage(result.error ?? "Could not submit answer.");
-    setMessage(result.isCorrect ? "Correct — moving to the next item." : "Not yet — this item will come back once later in the session.");
+    setMessage(result.isCorrect ? "Correct. Moving to the next item." : "Not yet. This item will come back once later in the session.");
     await loadSession();
     await loadPeerSolution(currentItem.itemId);
   }

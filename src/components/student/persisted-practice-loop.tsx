@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
-import { FractionInput, answerModeForSubskill } from "@/components/student/fraction-input";
+import { FractionInput, answerModeForSubskill, type FractionInputHandle } from "@/components/student/fraction-input";
+import { ItemModel } from "@/components/student/models/item-model";
 import { HintLadder, type HintLevel } from "@/components/student/hint-ladder";
 import { WorkHelpCard } from "@/components/student/work-help-card";
 import { buttonClasses } from "@/components/ui";
-import { canonicalDemoIds } from "@/lib/demo/contracts";
 
 type PracticeItem = { practiceSessionItemId: string; itemId: string; subskillId: string; prompt: string; position: number; status: "pending" | "missed" | "requeued" | "correct"; isResurfaced: boolean; peerGate: { approachUnlocked: boolean; fullSolutionUnlocked: boolean }; plan?: { subskillId: string; title: string; reason: string } };
 // `progress` only exists on the GET /api/practice payload — the POST /api/responses `practice`
@@ -40,7 +40,7 @@ function RungMotif({ side }: { side: "left" | "right" }) {
   );
 }
 
-export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: string; returnTo?: string }) {
+export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sessionId: string; returnTo?: string; studentId: string }) {
   const [practice, setPractice] = useState<Practice | null>(null);
   const [nextPractice, setNextPractice] = useState<Practice | null>(null);
   const [lastCorrect, setLastCorrect] = useState(false);
@@ -56,13 +56,14 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
   // Progressive disclosure: the hint ladder starts behind a quiet affordance;
   // work help appears only after another missed response following a real hint.
   const [hintOpen, setHintOpen] = useState(false);
+  const answerRef = useRef<FractionInputHandle>(null);
 
   useEffect(() => {
-    fetch(`/api/practice/${sessionId}?studentId=${canonicalDemoIds.mayaStudentId}`)
+    fetch(`/api/practice/${sessionId}?studentId=${encodeURIComponent(studentId)}`)
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
       .then(setPractice)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load practice"));
-  }, [sessionId]);
+  }, [sessionId, studentId]);
 
   const current = practice?.items.find((item) => item.status !== "correct") ?? null;
 
@@ -74,7 +75,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
     const response = await fetch("/api/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, context: "practice", practiceSessionId: practice.session.id, practiceSessionItemId: current.practiceSessionItemId, itemId: current.itemId, answer }),
+      body: JSON.stringify({ studentId, context: "practice", practiceSessionId: practice.session.id, practiceSessionItemId: current.practiceSessionItemId, itemId: current.itemId, answer }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -87,11 +88,6 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
       setPractice(body.practice);
       if (hadSubstantiveHint) setWorkHelpEligible(true);
     }
-  }
-
-  function tryAgain() {
-    setLastCorrect(false);
-    setAnswerRevision((currentRevision) => currentRevision + 1);
   }
 
   function nextQuestion() {
@@ -116,9 +112,10 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: canonicalDemoIds.mayaStudentId,
+          studentId,
           itemId: current.itemId,
           practiceSessionId: practice?.session.id,
+          practiceSessionItemId: current.practiceSessionItemId,
           attempt: lastAttempt,
           level,
         }),
@@ -145,6 +142,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
   }
 
   const sessionWillComplete = nextPractice?.session.status === "complete";
+  const masteryHref = `/student/mastery?studentId=${encodeURIComponent(studentId)}`;
   // Rung count is derived from the items themselves (the same formula the GET route uses for its
   // `progress` field, which POST responses omit), not the item's own position, since resurfaced
   // items can revisit an earlier rung without moving the count backwards.
@@ -190,9 +188,16 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
                 <FractionExpression text={current.prompt} size="lg" className="justify-center 2xl:text-4xl" />
               </div>
 
+              <ItemModel
+                subskillId={current.subskillId}
+                disabled={lastCorrect}
+                onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
+              />
+
               <div className="flex flex-col items-center gap-6 border-t border-border p-8 sm:p-10 2xl:p-12">
                 <FractionInput
                   key={`${current.practiceSessionItemId}-${answerRevision}`}
+                  ref={answerRef}
                   formId={ANSWER_FORM_ID}
                   showSubmit={false}
                   label={`Your answer to ${current.prompt}`}
@@ -213,13 +218,12 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
                     </p>
                   )}
                   {showMissed && (
+                    // No "Try again" button: the input is never disabled after a miss and Check
+                    // still submits, so the answer stays live and editable. A button here only
+                    // wiped the fields while implying it was a required step before retrying.
                     <div className="w-full rounded-lg border border-border bg-surface-2 p-4 text-left" role="status">
-                      <p className="text-sm font-semibold text-ink">Not yet — you&rsquo;ve got this.</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-4">
-                        <button type="button" onClick={tryAgain} className={buttonClasses("secondary", "md")}>
-                          Try again
-                        </button>
-                      </div>
+                      <p className="text-sm font-semibold text-ink">Not yet, you&rsquo;ve got this.</p>
+                      <p className="mt-1 text-sm text-ink-muted">Adjust your answer and press Check again.</p>
                     </div>
                   )}
                   {error && <p className="text-sm text-danger">{error}</p>}
@@ -230,7 +234,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
                     Check
                   </button>
                 ) : sessionWillComplete ? (
-                  <Link href={returnTo ?? "/student/mastery"} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+                  <Link href={returnTo ?? masteryHref} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
                     {returnTo ? "Back to practice plans" : "See my progress"}
                   </Link>
                 ) : (
@@ -266,8 +270,10 @@ export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: stri
             {showWorkHelp && workHelpSupportLevel && (
               <div className="animate-rise">
                 <WorkHelpCard
-                  studentId={canonicalDemoIds.mayaStudentId}
+                  studentId={studentId}
                   itemId={current.itemId}
+                  practiceSessionId={practice.session.id}
+                  practiceSessionItemId={current.practiceSessionItemId}
                   supportLevel={workHelpSupportLevel}
                 />
               </div>

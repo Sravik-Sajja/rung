@@ -26,7 +26,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
   return (
     <AppShell active="teacher">
       <PageHeader
-        description="This stable group is calculated from stored mastery evidence, not from a model — it changes only when new evidence is recorded."
+        description="This stable group is calculated from stored mastery evidence, not from a model. It changes only when new evidence is recorded."
         eyebrow="Teacher · small group"
         title={group.label}
       />

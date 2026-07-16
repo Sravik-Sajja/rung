@@ -22,7 +22,7 @@ import { HintLadder, type HintLevel } from "./hint-ladder";
 import { PeerGateCard } from "./peer-gate-card";
 
 const hintCopy: Record<HintLevel, string> = {
-  nudge: "Look at the two denominators before you add — are they the same?",
+  nudge: "Look at the two denominators before you add: are they the same?",
   hint: "Rewrite each fraction using a common denominator of 12.",
   guided_step: "Try using 12 as the common denominator. Rewrite both fractions over 12, then add the numerators. What fraction do you get?",
 };
@@ -71,7 +71,7 @@ export function PracticeSession({ sessionId, items }: { sessionId: string; items
           <Eyebrow className="mb-2">Practice</Eyebrow>
           <h1 className="text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">Common denominators</h1>
           <p className="mt-3 text-ink-muted">
-            Session {sessionId} — work through the item below, and use a hint only if you get stuck.
+            Session {sessionId}: work through the item below, and use a hint only if you get stuck.
           </p>
         </div>
 
@@ -121,7 +121,7 @@ export function PracticeSession({ sessionId, items }: { sessionId: string; items
 
           {hasMissed && (
             <div className="rounded-md border border-border bg-surface-2 p-4" role="status">
-              <p className="font-semibold text-ink">Not yet — you&apos;ve got this.</p>
+              <p className="font-semibold text-ink">Not yet, you&apos;ve got this.</p>
               <div className="mt-3 flex flex-wrap gap-3">
                 <button type="button" onClick={tryAgain} className={buttonClasses("secondary", "md")}>
                   Try again

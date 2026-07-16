@@ -1,0 +1,108 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireStudentActor } from "@/lib/auth/actor";
+import {
+  createDemoParticipant,
+  DEMO_PARTICIPANT_COOKIE,
+  isDemoMode,
+  resetDemoParticipantStore,
+  resolveDemoParticipantSession,
+} from "@/lib/demo/participant";
+import {
+  applyGeneratedDemoPracticePlan,
+  createGeneratedDemoPracticeSession,
+  getDemoPractice,
+  recordDemoPracticeResponse,
+  resetDemoLearningStore,
+} from "@/lib/student/demo-learning-store";
+import { getTeacherDashboard } from "@/lib/teacher/repository";
+
+function requestWithParticipantCookie(token: string) {
+  return new Request("http://localhost/api/example", {
+    headers: { cookie: `${DEMO_PARTICIPANT_COOKIE}=${token}` },
+  });
+}
+
+describe("temporary demo participants", () => {
+  beforeEach(() => {
+    resetDemoParticipantStore();
+    resetDemoLearningStore();
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("DEMO_MODE", "true");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+  });
+
+  afterEach(() => {
+    resetDemoParticipantStore();
+    resetDemoLearningStore();
+    vi.unstubAllEnvs();
+  });
+
+  it("is always disabled in production, even if DEMO_MODE is misconfigured", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "true");
+    expect(isDemoMode()).toBe(false);
+  });
+
+  it("binds a server-created learner to an opaque cookie and rejects impersonation", async () => {
+    const participant = await createDemoParticipant({ displayName: "  Ari O'Neil  " });
+    expect(participant.studentId).toMatch(/^demo-learner-/);
+    expect(participant.displayName).toBe("Ari O'Neil");
+    expect(participant.source).toBe("local");
+
+    const request = requestWithParticipantCookie(participant.sessionToken);
+    await expect(resolveDemoParticipantSession(request)).resolves.toEqual({
+      kind: "resolved",
+      participant: expect.objectContaining({
+        studentId: participant.studentId,
+        displayName: "Ari O'Neil",
+      }),
+    });
+    await expect(requireStudentActor(request, participant.studentId)).resolves.toEqual(expect.objectContaining({
+      studentId: participant.studentId,
+      identity: "temporary_participant",
+      store: "local_demo",
+    }));
+    await expect(requireStudentActor(request, "maya-chen")).rejects.toThrow("belongs to another learner");
+
+    // Maya remains an explicit no-cookie fallback; an arbitrary ID does not.
+    await expect(requireStudentActor(new Request("http://localhost/api/example"), "maya-chen"))
+      .resolves.toEqual(expect.objectContaining({ identity: "maya_fallback" }));
+    await expect(requireStudentActor(new Request("http://localhost/api/example"), "someone-else"))
+      .rejects.toThrow("Unknown demo student");
+  });
+
+  it("projects local participant rows and evolving local mastery through the teacher repository", async () => {
+    const participant = await createDemoParticipant({ displayName: "Jordan" });
+    const before = await getTeacherDashboard();
+    expect(before?.students).toContainEqual(expect.objectContaining({ id: participant.studentId, displayName: "Jordan" }));
+    expect(before?.cells.filter((cell) => cell.studentId === participant.studentId)).toHaveLength(5);
+    expect(before?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
+      .toEqual(expect.objectContaining({ level: "not_started" }));
+
+    const practiceSessionId = createGeneratedDemoPracticeSession(participant.studentId);
+    const applied = applyGeneratedDemoPracticePlan({
+      practiceSessionId,
+      studentId: participant.studentId,
+      targetSubskillId: "add-unlike-denominators",
+      items: [
+        { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
+        { kind: "fraction_operation", operation: "add", leftNumerator: 2, leftDenominator: 5, rightNumerator: 1, rightDenominator: 3 },
+        { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 6, rightNumerator: 1, rightDenominator: 4 },
+      ],
+    });
+    expect(applied).not.toBeNull();
+    const first = getDemoPractice(practiceSessionId, participant.studentId)?.items[0];
+    expect(first).toBeDefined();
+    recordDemoPracticeResponse({
+      practiceSessionId,
+      practiceSessionItemId: first!.practiceSessionItemId,
+      studentId: participant.studentId,
+      answer: "7/12",
+    });
+
+    const after = await getTeacherDashboard();
+    expect(after?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
+      .toEqual(expect.objectContaining({ level: "developing", evidenceSummary: "Updated from your focused practice." }));
+  });
+});

@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/components/ui";
+import { RungWordmark } from "@/components/rung-wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // "focused" is the default reading column for a single flow; "wide" opens the frame for layouts
@@ -31,10 +32,7 @@ export function StudentShell({
           bg-bg canvas reads as a distinct plane underneath it, not one flat wash. */}
       <header className="border-b border-border bg-surface shadow-sm">
         <div className={cn(container, "flex items-center justify-between gap-4 py-3")}>
-          <span className="inline-flex items-center gap-2 text-base font-extrabold tracking-tight text-ink">
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-spark" />
-            Rung
-          </span>
+          <RungWordmark size="sm" />
           <div className="flex items-center gap-3">
             {aside}
             <ThemeToggle />

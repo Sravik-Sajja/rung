@@ -23,6 +23,9 @@ export type WorkHelpCardProps = {
   /** Resolved on the server in production; passed here for the demo API contract. */
   studentId: string;
   itemId: string;
+  /** The server resolves the trusted item from this exact practice occurrence. */
+  practiceSessionId: string;
+  practiceSessionItemId: string;
   supportLevel: WorkHelpSupportLevel;
   /** Optional handoff for a parent that wants to retain the latest answer-safe help. */
   onResponse?: (response: WorkHelpResponse) => void;
@@ -62,6 +65,8 @@ function parseWorkHelpResponse(value: unknown): WorkHelpResponse | null {
 export function WorkHelpCard({
   studentId,
   itemId,
+  practiceSessionId,
+  practiceSessionItemId,
   supportLevel,
   onResponse,
   disabled = false,
@@ -116,6 +121,8 @@ export function WorkHelpCard({
       const formData = new FormData();
       formData.set("studentId", studentId);
       formData.set("itemId", itemId);
+      formData.set("practiceSessionId", practiceSessionId);
+      formData.set("practiceSessionItemId", practiceSessionItemId);
       formData.set("supportLevel", supportLevel);
       formData.set("writtenWork", trimmedWork);
       if (photo) formData.set("photo", photo);
@@ -154,7 +161,7 @@ export function WorkHelpCard({
         Show your work
       </h2>
       <p className="mt-1 text-sm text-ink-muted">
-        Tell us what you tried and we&apos;ll point out one useful next step—without giving away the answer.
+        Tell us what you tried and we&apos;ll point out one useful next step, without giving away the answer.
       </p>
 
       <form className="mt-5 space-y-4" onSubmit={submit}>

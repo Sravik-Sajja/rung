@@ -8,8 +8,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ assi
   const { assignmentId } = await params;
   const studentId = new URL(request.url).searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
   try {
-    await requireStudentActor(request, studentId);
-    const diagnostic = await startPersistedDiagnostic({ studentId, assignmentId }) ?? startDemoDiagnostic(studentId);
+    const actor = await requireStudentActor(request, studentId);
+    const diagnostic = actor.store === "local_demo"
+      ? startDemoDiagnostic(studentId)
+      : await startPersistedDiagnostic({ studentId, assignmentId });
+    if (!diagnostic) return NextResponse.json({ error: "Diagnostic persistence is unavailable" }, { status: 503 });
     if (diagnostic.assignmentId !== assignmentId) return NextResponse.json({ error: "Unknown diagnostic assignment" }, { status: 404 });
     return NextResponse.json(diagnostic);
   } catch (error) {

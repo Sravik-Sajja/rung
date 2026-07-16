@@ -34,8 +34,8 @@ export function LessonPlanCard({ plan }: { plan: TeacherGroupPlan }) {
                 {index + 1}
               </span>
               <p className="text-sm text-ink">
-                <span className="font-mono font-medium tabular-nums text-ink-muted">{step.minutes} min</span>{" "}
-                &mdash; {step.activity}
+                <span className="font-mono font-medium tabular-nums text-ink-muted">{step.minutes} min:</span>{" "}
+                {step.activity}
               </p>
             </li>
           ))}

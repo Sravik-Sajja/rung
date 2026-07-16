@@ -8,7 +8,7 @@ export type HintLevel = "nudge" | "hint" | "guided_step";
 const rungs: Array<{ level: HintLevel; step: string; label: string; description: string }> = [
   { level: "nudge", step: "01", label: "Nudge", description: "A question to point you back at the problem." },
   { level: "hint", step: "02", label: "Hint", description: "One specific piece of the method." },
-  { level: "guided_step", step: "03", label: "Guided step", description: "One next actionable step — never the completed solution." },
+  { level: "guided_step", step: "03", label: "Guided step", description: "One next actionable step, never the completed solution." },
 ];
 
 export function HintLadder({
@@ -30,12 +30,12 @@ export function HintLadder({
   const body = (
     <>
       {embedded ? (
-        <p className="text-sm text-ink-muted">Try the smallest rung first — each one gives a little more away.</p>
+        <p className="text-sm text-ink-muted">Try the smallest rung first: each one gives a little more away.</p>
       ) : (
         <>
           <Eyebrow className="mb-1">Tutor support</Eyebrow>
           <h2 className="text-xl font-bold tracking-tight text-ink">Need a hand?</h2>
-          <p className="mt-1 text-sm text-ink-muted">Try the smallest rung first — each one gives a little more away.</p>
+          <p className="mt-1 text-sm text-ink-muted">Try the smallest rung first: each one gives a little more away.</p>
         </>
       )}
 

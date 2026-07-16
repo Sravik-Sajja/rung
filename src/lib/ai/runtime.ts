@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { analyzeWorkInputSchema, generatedPracticePlanSchema } from "@/lib/ai/contracts";
+import { analyzeWorkInputSchema, generatedPracticePlanSchema, tutorHintInputSchema } from "@/lib/ai/contracts";
 import type {
   AiSource,
   AttemptVerification,
@@ -14,13 +14,15 @@ import type {
   ParametricItem,
   RungAiAdapter,
   SafeItem,
+  TutorHintInput,
   TutorHint,
   WorkAnalysis,
   GeneratedPracticePlan,
 } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
-import { containsAnswerLeak, containsGenericTutorLeak } from "@/lib/ai/leakage";
+import { containsAnswerLeak, containsGenericTutorLeak, containsTutorHintLeak } from "@/lib/ai/leakage";
+import { generatedPracticePlanFallback, validateGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 
 export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "practice_plan" | "item_wrap";
 export type AiRunStatus = "valid" | "live_failed" | "cache_hit" | "fallback";
@@ -218,18 +220,33 @@ function workAnalysisInputHash(input: AnalyzeWorkInput): string {
     writtenWorkHash: hashInput(input.writtenWork),
     imageHash: input.imageDataUrl ? hashInput(input.imageDataUrl) : null,
     protectedAnswerHashes: input.protectedAnswers.map(hashInput),
+    protectedAnswerRuleHash: input.protectedAnswerRule ? hashInput(input.protectedAnswerRule) : null,
     protectedSolutionStepHashes: input.protectedSolutionSteps.map(hashInput),
+    promptVersion: input.promptVersion,
+  });
+}
+
+/**
+ * Tutor protection is intentionally absent. It is used only to reject output,
+ * never to influence a model request, cache payload, or ai_runs record.
+ */
+function tutorHintInputHash(input: TutorHintInput): string {
+  return hashInput({
+    studentId: input.studentId,
+    item: input.item,
+    learnerAttempt: input.attempt,
+    level: input.level,
     promptVersion: input.promptVersion,
   });
 }
 
 function containsWorkAnalysisLeak(
   payload: z.infer<typeof workAnalysisPayloadSchema>,
-  input: Pick<AnalyzeWorkInput, "protectedAnswers" | "protectedSolutionSteps">,
+  input: Pick<AnalyzeWorkInput, "protectedAnswers" | "protectedAnswerRule" | "protectedSolutionSteps">,
 ): boolean {
   return [payload.observation, payload.nextStep, payload.checkQuestion].some((text) =>
     containsGenericTutorLeak(text)
-    || containsAnswerLeak(text, input.protectedAnswers, input.protectedSolutionSteps)
+    || containsAnswerLeak(text, input.protectedAnswers, input.protectedSolutionSteps, input.protectedAnswerRule)
     || containsStandaloneProtectedAnswer(text, input.protectedAnswers),
   );
 }
@@ -322,11 +339,12 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       } satisfies DiagnosisExplanation;
     },
 
-    async tutorHint(input) {
+    async tutorHint(rawInput) {
+      const input = tutorHintInputSchema.parse(rawInput);
       const result = await resolveStructuredPayload({
         feature: "tutor_hint",
         promptVersion: input.promptVersion,
-        inputHash: hashInput(input),
+        inputHash: tutorHintInputHash(input),
         model: modelFor("tutor_hint", models),
         schema: tutorPayloadSchema,
         completionClient,
@@ -345,11 +363,11 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
           user: JSON.stringify({ item: input.item, learnerAttempt: input.attempt, level: input.level }),
         },
         validate: (payload) => {
-          if (containsGenericTutorLeak(payload.hint)) {
-            throw new Error("Tutor hint contained a direct-answer signal.");
+          if (containsTutorHintLeak(payload.hint, input.protection)) {
+            throw new Error("Tutor hint contained protected-answer or solution leakage.");
           }
         },
-        fallback: () => ({ hint: getTutorHintFallback(input.item.id, input.level).hint }),
+        fallback: () => ({ hint: getTutorHintFallback(input.item, input.level).hint }),
       });
 
       return {
@@ -394,19 +412,6 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
     },
 
     async generatePracticePlan(input) {
-      const operationFallbackItems = [
-        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
-        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 2, leftDenominator: 5, rightNumerator: 1, rightDenominator: 3 },
-        { kind: "fraction_operation" as const, operation: "subtract" as const, leftNumerator: 3, leftDenominator: 4, rightNumerator: 1, rightDenominator: 3 },
-        { kind: "fraction_operation" as const, operation: "add" as const, leftNumerator: 3, leftDenominator: 8, rightNumerator: 1, rightDenominator: 6 },
-      ];
-      const fallbackItems = input.targetSubskillId === "fraction-number-line"
-        ? [{ kind: "number_line" as const, numerator: 1, denominator: 2 }, { kind: "number_line" as const, numerator: 2, denominator: 3 }, { kind: "number_line" as const, numerator: 3, denominator: 4 }]
-        : input.targetSubskillId === "equivalent-fractions"
-          ? [{ kind: "equivalent_fraction" as const, numerator: 1, denominator: 3, multiplier: 2 }, { kind: "equivalent_fraction" as const, numerator: 2, denominator: 5, multiplier: 3 }, { kind: "equivalent_fraction" as const, numerator: 3, denominator: 4, multiplier: 2 }]
-          : input.targetSubskillId === "find-common-denominator"
-            ? [{ kind: "common_denominator" as const, leftDenominator: 3, rightDenominator: 4 }, { kind: "common_denominator" as const, leftDenominator: 4, rightDenominator: 5 }, { kind: "common_denominator" as const, leftDenominator: 3, rightDenominator: 5 }]
-            : operationFallbackItems;
       const result = await resolveStructuredPayload({
         feature: "practice_plan", promptVersion: input.promptVersion, inputHash: hashInput(input), model: modelFor("practice_plan", models), schema: practicePlanPayloadSchema, completionClient, runStore,
         request: {
@@ -415,11 +420,9 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
           user: JSON.stringify({ targetSubskillId: input.targetSubskillId, misconceptionTags: input.misconceptionTags }),
         },
         validate: (payload) => {
-          const expected = input.targetSubskillId === "fraction-number-line" ? "number_line" : input.targetSubskillId === "equivalent-fractions" ? "equivalent_fraction" : input.targetSubskillId === "find-common-denominator" ? "common_denominator" : "fraction_operation";
-          if (!payload.items.every((item) => item.kind === expected)) throw new Error("Practice plan did not match its diagnosed skill.");
-          if (expected === "fraction_operation" && payload.items.some((item) => item.kind === "fraction_operation" && item.leftDenominator === item.rightDenominator)) throw new Error("Fraction-operation plan used equal denominators.");
+          validateGeneratedPracticePlan({ targetSubskillId: input.targetSubskillId, items: payload.items });
         },
-        fallback: () => ({ items: fallbackItems }),
+        fallback: () => ({ items: generatedPracticePlanFallback(input.targetSubskillId) }),
       });
       return { items: result.payload.items, source: result.source, promptVersion: input.promptVersion, aiRunId: result.aiRunId } satisfies GeneratedPracticePlan;
     },

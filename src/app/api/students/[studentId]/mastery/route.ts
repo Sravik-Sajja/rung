@@ -8,8 +8,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ stud
   const { studentId } = await params;
   const topicId = new URL(request.url).searchParams.get("topicId") ?? canonicalDemoIds.fractionsTopicId;
   try {
-    await requireStudentActor(request, studentId);
-    const mastery = await getPersistedStudentMastery({ studentId, topicId }) ?? { studentId, topicId, skills: getDemoStudentMastery(studentId) };
+    const actor = await requireStudentActor(request, studentId);
+    const mastery = actor.store === "local_demo"
+      ? { studentId, topicId, skills: getDemoStudentMastery(studentId) }
+      : await getPersistedStudentMastery({ studentId, topicId });
+    if (!mastery) return NextResponse.json({ error: "Mastery persistence is unavailable" }, { status: 503 });
     return NextResponse.json(mastery);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load mastery" }, { status: 400 });

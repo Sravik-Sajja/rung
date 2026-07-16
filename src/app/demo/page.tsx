@@ -1,6 +1,7 @@
 // Demo entry screen for selecting a seeded role and starting Maya's walkthrough.
 import Link from "next/link";
 import { StudentShell } from "@/components/student/surface/student-shell";
+import { StartClimbForm } from "@/components/demo/start-climb-form";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui";
 import { demoStudents } from "@/lib/demo-data";
 
@@ -29,7 +30,7 @@ function RungMotif({ side }: { side: "left" | "right" }) {
 }
 
 export default function DemoPage() {
-  const [maya, ...rest] = demoStudents;
+  const maya = demoStudents[0]!;
 
   return (
     <StudentShell exitHref="/" size="wide">
@@ -54,37 +55,26 @@ export default function DemoPage() {
               Let&rsquo;s find your next climb.
             </h1>
             <p className="mt-4 text-pretty text-lg text-ink-muted">
-              Every learner starts on a different rung — Rung meets you on yours. This walkthrough
-              follows Maya Chen through a quick check-in, a focused practice set, and an honest look
-              at what she&rsquo;s climbed so far.
+              Every learner starts on a different rung. Enter a name to take a quick check-in, work
+              through focused practice, and see your own learning evidence appear in the class view.
             </p>
           </div>
 
-          {/* Primary hero CTA: bg-elevated + shadow-lg + rounded-2xl makes this the one thing
-              that visibly floats off the bg-bg canvas, matching the diagnostic card so the start
-              action is unmistakably the single focal point. */}
+          {/* The name step creates a server-owned temporary learner before the
+              student route begins. The existing visual treatment stays intact. */}
           <Card className="animate-rise mt-10 flex flex-col items-center gap-5 rounded-2xl border-border-strong bg-elevated p-8 text-center shadow-lg">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-border-strong bg-accent-soft font-mono text-base font-bold text-accent">
-              MC
+            <StartClimbForm />
+            <div className="w-full border-t border-border pt-4">
+              <p className="text-sm text-ink-muted">Need the prepared rehearsal instead?</p>
+              <Link href={`/student/diagnostic?studentId=${encodeURIComponent(maya.id)}`} className={buttonClasses("secondary", "md", "mt-3")}>
+                View the prepared Maya walkthrough
+              </Link>
             </div>
-            <div>
-              <p className="text-xl font-bold text-ink">{maya.displayName}</p>
-              <p className="mt-0.5 text-sm text-ink-muted">Fractions unit &middot; ready when you are</p>
-            </div>
-            <Link href="/student/diagnostic" className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
-              Start the climb
-            </Link>
           </Card>
 
           <div className="mt-8 text-center">
-            <p className="mb-3 text-sm text-ink-muted">Other learners in this class</p>
-            <ul className="flex flex-wrap justify-center gap-2">
-              {rest.map((student) => (
-                <li key={student.id}>
-                  <Badge tone="neutral">{student.displayName}</Badge>
-                </li>
-              ))}
-            </ul>
+            <Badge tone="neutral">Temporary walkthrough data</Badge>
+            <p className="mt-2 text-sm text-ink-muted">Your name and progress are visible only for this demo session.</p>
           </div>
         </div>
       </section>

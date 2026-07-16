@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { RungProgress } from "@/components/student/surface/rung-progress";
 import { FractionExpression } from "@/components/student/fraction";
-import { FractionInput, answerModeForSubskill } from "@/components/student/fraction-input";
+import { FractionInput, answerModeForSubskill, type FractionInputHandle } from "@/components/student/fraction-input";
+import { ItemModel } from "@/components/student/models/item-model";
 import { Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 
@@ -16,7 +17,7 @@ type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: Di
 // answer — since a diagnostic measures where the student is, and any hint they lean on flags that
 // subskill for extra reps in the follow-up practice set.
 const hintsBySubskill: Record<string, string> = {
-  "equivalent-fractions": "Multiply the top and bottom by the same number — the value stays the same.",
+  "equivalent-fractions": "Multiply the top and bottom by the same number: the value stays the same.",
   "fraction-number-line": "Split the line from 0 to 1 into equal parts that match the denominator, then count up.",
   "find-common-denominator": "Look for a number that both denominators divide into evenly.",
   "add-unlike-denominators": "Rewrite both fractions over a common denominator first, then add just the numerators.",
@@ -52,8 +53,12 @@ function RungMotif({ side }: { side: "left" | "right" }) {
   );
 }
 
-export default function DiagnosticPage() {
+function DiagnosticContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // The server still verifies this against the opaque demo cookie; the query
+  // merely preserves the selected learner across the visible walkthrough.
+  const studentId = searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
   const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
   // The framing copy earns its display size exactly once — as an intro step — instead of sitting
   // beside every question as a permanent second focal point.
@@ -65,13 +70,14 @@ export default function DiagnosticPage() {
   // Item ids the student revealed a hint on — sent with the answer so completion can add extra
   // practice for those subskills. Persists across questions; the current item's flag is derived below.
   const [hintedItems, setHintedItems] = useState<Set<string>>(new Set());
+  const answerRef = useRef<FractionInputHandle>(null);
 
   useEffect(() => {
-    fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}?studentId=${canonicalDemoIds.mayaStudentId}`)
+    fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}?studentId=${encodeURIComponent(studentId)}`)
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
       .then(setDiagnostic)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not start diagnostic"));
-  }, []);
+  }, [studentId]);
 
   const item = diagnostic?.items[index];
   const total = diagnostic?.items.length ?? 0;
@@ -92,7 +98,7 @@ export default function DiagnosticPage() {
       const response = await fetch("/api/responses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic", usedHint: hintedItems.has(item.id) }),
+        body: JSON.stringify({ studentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic", usedHint: hintedItems.has(item.id) }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -110,7 +116,7 @@ export default function DiagnosticPage() {
   function handleNext() {
     if (!diagnostic) return;
     if (isLastItem) {
-      router.push(`/student/diagnosis?diagnosticSessionId=${diagnostic.diagnosticSessionId}`);
+      router.push(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId)}`);
       return;
     }
     setIndex((current) => current + 1);
@@ -144,7 +150,7 @@ export default function DiagnosticPage() {
                 Let&rsquo;s find your starting rung.
               </h1>
               <p className="mt-4 max-w-md text-pretty text-ink-muted sm:text-lg">
-                A few quick questions — no grade, no wrong way to start. Rung just uses them to
+                A few quick questions, no grade, no wrong way to start. Rung just uses them to
                 point you at the practice that will help the most.
               </p>
               <button
@@ -185,12 +191,22 @@ export default function DiagnosticPage() {
                   <FractionExpression text={item.prompt} size="lg" className="justify-center 2xl:text-4xl" />
                 </div>
 
+                <ItemModel
+                  subskillId={item.subskillId}
+                  disabled={recorded}
+                  onUseAnswer={(answer) => answerRef.current?.setAnswer(answer)}
+                />
+
                 {/* Answer zone: inputs mirror the stacked fraction in the prompt, the hint stays a
                     quiet text affordance until asked for, and one primary button holds the bottom
-                    slot — Check morphs into Next in place once the answer is saved. */}
+                    slot — Save morphs into Next in place once the answer is recorded. The label is
+                    "Save answer", not "Check": a diagnostic records the answer and never reveals
+                    correctness, so promising a check would be a lie. Practice, which does score
+                    immediately, keeps its own "Check" button. */}
                 <div className="flex flex-col items-center gap-6 border-t border-border p-8 sm:p-10 2xl:p-12">
                   <FractionInput
                     key={item.id}
+                    ref={answerRef}
                     formId={ANSWER_FORM_ID}
                     showSubmit={false}
                     label={`Your answer to ${item.prompt}`}
@@ -203,13 +219,15 @@ export default function DiagnosticPage() {
                   {hintUsed ? (
                     // Blue is the support signal in this system (green stays "correct"). The note
                     // flags the consequence honestly: this kind of question comes back afterward.
-                    // -mt-3 pulls this up against the answer-mode toggle inside FractionInput so
-                    // the two quiet-link affordances read as one grouped cluster, without touching
-                    // the gap-6 the parent column keeps below (toward the feedback/action region).
-                    <div className="animate-rise -mt-3 w-full rounded-lg border border-focus bg-focus-soft p-4 text-left">
+                    // A margin annotation, not an alert box: a thin blue rail carries the hint
+                    // instead of a tinted, bordered panel. -mt-3 pulls this up against the
+                    // answer-mode toggle inside FractionInput so the two quiet-link affordances
+                    // read as one grouped cluster, without touching the gap-6 the parent column
+                    // keeps below (toward the feedback/action region).
+                    <div className="animate-rise -mt-3 w-full border-l-2 border-focus pl-4 text-left">
                       <p className="text-sm font-semibold text-focus">Hint</p>
-                      <p className="mt-1.5 text-sm text-ink">{hintText}</p>
-                      <p className="mt-2.5 text-sm text-ink-muted">You&rsquo;ll get extra practice on this kind of question.</p>
+                      <p className="mt-1 text-ink">{hintText}</p>
+                      <p className="mt-2 text-sm text-ink-muted">You&rsquo;ll get extra practice on this kind of question.</p>
                     </div>
                   ) : (
                     <button
@@ -225,9 +243,20 @@ export default function DiagnosticPage() {
                   <div aria-live="polite" className="flex w-full flex-col items-center gap-3 empty:hidden">
                     {recorded && (
                       // Momentum-gold, not correct-green: a diagnostic saves your thinking, it
-                      // doesn't grade it. Gold says "logged, keep moving" without implying right/wrong.
-                      <p className="animate-pop rounded-lg border border-spark bg-spark-soft px-4 py-2.5 text-sm font-medium text-spark-ink">
-                        Got it — your answer is saved.
+                      // doesn't grade it. Gold says "logged, keep moving" without implying
+                      // right/wrong. An inline acknowledgment, not a pill: no border or fill, just
+                      // a small glyph beside the text. text-spark-ink (not text-spark) carries both
+                      // the icon and the copy since it's the token with safe contrast on the
+                      // elevated card in both themes.
+                      <p className="animate-pop inline-flex items-center gap-2 text-sm font-medium text-spark-ink">
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 20 20"
+                          className="h-4 w-4 shrink-0 fill-current"
+                        >
+                          <path d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4L8 11.6l6.8-6.8a1 1 0 0 1 1.4 0Z" />
+                        </svg>
+                        Got it. Your answer is saved.
                       </p>
                     )}
                     {error && <p className="text-sm text-danger">{error}</p>}
@@ -240,7 +269,7 @@ export default function DiagnosticPage() {
                       disabled={submitting}
                       className={buttonClasses("focus", "lg", "w-full sm:w-72")}
                     >
-                      Check
+                      Save answer
                     </button>
                   ) : (
                     <button
@@ -259,4 +288,8 @@ export default function DiagnosticPage() {
       </section>
     </StudentShell>
   );
+}
+
+export default function DiagnosticPage() {
+  return <Suspense fallback={<StudentShell size="wide"><section className="flex flex-1 items-center justify-center"><p className="text-ink-muted">Loading your check-in…</p></section></StudentShell>}><DiagnosticContent /></Suspense>;
 }

@@ -9,9 +9,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
   const studentId = new URL(request.url).searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
 
   try {
-    await requireStudentActor(request, studentId);
-    const practice = await getPersistedPractice({ practiceSessionId: sessionId, studentId })
-      ?? getDemoPractice(sessionId, studentId);
+    const actor = await requireStudentActor(request, studentId);
+    const practice = actor.store === "local_demo"
+      ? getDemoPractice(sessionId, studentId)
+      : await getPersistedPractice({ practiceSessionId: sessionId, studentId });
     if (!practice) {
       return NextResponse.json({ error: "Practice session was not found" }, { status: 404 });
     }

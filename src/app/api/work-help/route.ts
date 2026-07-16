@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { runtimeAiAdapter } from "@/lib/ai/adapter";
+import { getTutorHintProtection } from "@/lib/ai/fixtures";
 import { requireStudentActor } from "@/lib/auth/actor";
-import { mayaPracticeItemContent } from "@/lib/content/maya-fractions";
-import { findDemoItem } from "@/lib/demo-data";
+import {
+  claimPracticeWorkHelp,
+  releasePracticeWorkHelpClaim,
+  resolvePracticeSupportItem,
+  type ResolvedPracticeSupport,
+} from "@/lib/student/practice-support";
+import type { Item } from "@/lib/types";
 import { workHelpFormSchema } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
@@ -79,32 +85,79 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send your work as a valid form submission." }, { status: 400 });
   }
 
-  const parsed = workHelpFormSchema.safeParse({
-    studentId: formData.get("studentId"),
-    itemId: formData.get("itemId"),
-    writtenWork: formData.get("writtenWork"),
-    supportLevel: formData.get("supportLevel"),
-  });
+  const rawForm: Record<string, FormDataEntryValue | undefined> = {
+    studentId: formData.get("studentId") ?? undefined,
+    itemId: formData.get("itemId") ?? undefined,
+    writtenWork: formData.get("writtenWork") ?? undefined,
+    supportLevel: formData.get("supportLevel") ?? undefined,
+  };
+  const practiceSessionId = formData.get("practiceSessionId");
+  const practiceSessionItemId = formData.get("practiceSessionItemId");
+  if (practiceSessionId !== null) rawForm.practiceSessionId = practiceSessionId;
+  if (practiceSessionItemId !== null) rawForm.practiceSessionItemId = practiceSessionItemId;
+
+  const parsed = workHelpFormSchema.safeParse(rawForm);
   if (!parsed.success) {
     return NextResponse.json({ error: "Add a short explanation of what you tried, then try again." }, { status: 400 });
   }
 
-  const item = findDemoItem(parsed.data.itemId);
-  if (!item) return NextResponse.json({ error: "This practice item was not found." }, { status: 404 });
-
+  // Authorize before resolving item content. Generated items are deliberately
+  // unavailable unless the request identifies an owned session occurrence.
+  let actor: Awaited<ReturnType<typeof requireStudentActor>>;
   try {
-    await requireStudentActor(request, parsed.data.studentId);
+    actor = await requireStudentActor(request, parsed.data.studentId);
   } catch {
     return NextResponse.json({ error: "You cannot request help for this learner." }, { status: 403 });
   }
 
+  let item: Item;
+  let resolvedSupport: ResolvedPracticeSupport | undefined;
+  if ("practiceSessionId" in parsed.data) {
+    const resolved = await resolvePracticeSupportItem({
+      studentId: actor.studentId,
+      practiceSessionId: parsed.data.practiceSessionId,
+      practiceSessionItemId: parsed.data.practiceSessionItemId,
+      store: actor.store,
+    });
+    if (resolved.status === "forbidden") return NextResponse.json({ error: "You cannot request help for this practice session." }, { status: 403 });
+    if (resolved.status === "not_found") return NextResponse.json({ error: "This practice session or item was not found." }, { status: 404 });
+    if (resolved.status === "unavailable") return NextResponse.json({ error: "Practice support is unavailable right now." }, { status: 503 });
+    item = resolved.item;
+    resolvedSupport = resolved;
+  } else {
+    // Work-help is an earned escalation, so an old catalog-only payload may
+    // not bypass the server-owned session/event boundary.
+    return NextResponse.json({ error: "Record a practice attempt and hint in this session before asking for work-based help." }, { status: 409 });
+  }
+
+  if (!resolvedSupport) return NextResponse.json({ error: "Practice support is unavailable right now." }, { status: 503 });
+
   const image = await readOptionalImage(formData.get("photo"));
   if ("error" in image) return NextResponse.json({ error: image.error }, { status: image.status });
 
-  const itemContent = mayaPracticeItemContent[item.id as keyof typeof mayaPracticeItemContent];
+  // All request validation is complete before reserving the one eligible
+  // response. The reservation prevents two concurrent tabs from consuming
+  // the escalation twice, and is released if the adapter fails.
+  let claimId: string;
+  try {
+    const claim = await claimPracticeWorkHelp({ resolution: resolvedSupport, studentId: actor.studentId });
+    if (claim.status === "unavailable") return NextResponse.json({ error: "Practice support is unavailable right now." }, { status: 503 });
+    if (claim.status === "ineligible") return NextResponse.json({ error: "Show your work becomes available after a missed answer, a hint, and one more try." }, { status: 409 });
+    if (claim.status !== "claimed") return NextResponse.json({ error: "Practice support is unavailable right now." }, { status: 503 });
+    claimId = claim.claimId;
+  } catch {
+    return NextResponse.json({ error: "We could not check work-help eligibility. Try again." }, { status: 503 });
+  }
+
+  const protection = getTutorHintProtection(item);
+  // Persisted generated items carry their own validated solution steps. The
+  // fallback map covers demo-only / older seeded rows that predate the column.
+  const protectedSolutionSteps = resolvedSupport.solutionSteps.length
+    ? resolvedSupport.solutionSteps
+    : protection.protectedSolutionSteps;
   try {
     const help = await runtimeAiAdapter.analyzeWork({
-      studentId: parsed.data.studentId,
+      studentId: actor.studentId,
       item: {
         id: item.id,
         subskillId: item.subskillId,
@@ -116,8 +169,9 @@ export async function POST(request: Request) {
       imageDataUrl: image.dataUrl,
       // These are protected context for the server-side safety boundary. They
       // are never returned by this route and are not used for scoring/unlocks.
-      protectedAnswers: [...item.answerSpec.accepted],
-      protectedSolutionSteps: itemContent ? [...itemContent.solutionSteps] : [],
+      protectedAnswers: protection.protectedAnswers,
+      protectedAnswerRule: protection.protectedAnswerRule,
+      protectedSolutionSteps,
       promptVersion: `work-help-v1-${parsed.data.supportLevel}`,
     });
 
@@ -134,6 +188,12 @@ export async function POST(request: Request) {
       leakCheck: help.leakCheck,
     });
   } catch {
+    try {
+      await releasePracticeWorkHelpClaim({ resolution: resolvedSupport, studentId: actor.studentId, claimId });
+    } catch {
+      // The learner still receives a retry-safe error. We never store the
+      // typed work or photo while attempting to release a reservation.
+    }
     return NextResponse.json({ error: "We could not review your work right now. Try the next hint or try again shortly." }, { status: 500 });
   }
 }

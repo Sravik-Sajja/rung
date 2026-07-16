@@ -4,6 +4,7 @@ import type { RungAiAdapter } from "@/lib/ai/contracts";
 import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
 import { getWorkAnalysisFallback } from "@/lib/ai/runtime";
+import { generatedPracticePlanFallback } from "@/lib/items/generated-practice-plan";
 export { createAiAdapter, DEFAULT_AI_MODEL, getWorkAnalysisFallback, modelFor, readModelConfig, runtimeAiAdapter } from "@/lib/ai/runtime";
 
 export const fallbackAiAdapter: RungAiAdapter = {
@@ -20,7 +21,7 @@ export const fallbackAiAdapter: RungAiAdapter = {
     };
   },
   async tutorHint(input) {
-    return { ...getTutorHintFallback(input.item.id, input.level), promptVersion: input.promptVersion };
+    return { ...getTutorHintFallback(input.item, input.level), promptVersion: input.promptVersion };
   },
   async verifyAttempt(input) {
     return { ...attemptVerificationFallback, promptVersion: input.promptVersion };
@@ -36,12 +37,7 @@ export const fallbackAiAdapter: RungAiAdapter = {
   },
   async generatePracticePlan(input) {
     return {
-      items: [
-        { kind: "fraction_operation", operation: "add", leftNumerator: 1, leftDenominator: 3, rightNumerator: 1, rightDenominator: 4 },
-        { kind: "fraction_operation", operation: "add", leftNumerator: 2, leftDenominator: 5, rightNumerator: 1, rightDenominator: 3 },
-        { kind: "fraction_operation", operation: "subtract", leftNumerator: 3, leftDenominator: 4, rightNumerator: 1, rightDenominator: 3 },
-        { kind: "fraction_operation", operation: "add", leftNumerator: 3, leftDenominator: 8, rightNumerator: 1, rightDenominator: 6 },
-      ],
+      items: generatedPracticePlanFallback(input.targetSubskillId),
       source: "fallback",
       promptVersion: input.promptVersion,
       aiRunId: `fallback-practice-plan-${input.targetSubskillId}`,

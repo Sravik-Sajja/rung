@@ -10,18 +10,20 @@ export async function POST(request: Request) {
   if (!result.success) return NextResponse.json({ error: "Invalid response" }, { status: 400 });
 
   try {
-    await requireStudentActor(request, result.data.studentId);
+    const actor = await requireStudentActor(request, result.data.studentId);
     if (result.data.context === "diagnostic") {
-      const persisted = await recordPersistedDiagnosticResponse(result.data);
-      const response = persisted ?? recordDemoDiagnosticResponse(result.data);
+      const response = actor.store === "local_demo"
+        ? recordDemoDiagnosticResponse(result.data)
+        : await recordPersistedDiagnosticResponse(result.data);
       if (!response) {
         return NextResponse.json({ error: "Diagnostic session or item was not found" }, { status: 404 });
       }
       return NextResponse.json({ ...response, normalizedAnswer: result.data.answer.trim() });
     }
 
-    const persisted = await recordPersistedPracticeResponse(result.data);
-    const response = persisted ?? recordDemoPracticeResponse(result.data);
+    const response = actor.store === "local_demo"
+      ? recordDemoPracticeResponse(result.data)
+      : await recordPersistedPracticeResponse(result.data);
     if (!response) {
       return NextResponse.json({ error: "Practice session or item was not found" }, { status: 404 });
     }

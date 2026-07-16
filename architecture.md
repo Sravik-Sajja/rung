@@ -1,7 +1,7 @@
 # Rung MVP Architecture
 
 **Status:** Source of truth for the deployable post-hackathon MVP
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16
 **Delivery target:** 2026-07-21  
 **Team:** 2 builders
 
@@ -72,16 +72,16 @@ The MVP must make this claim credibly:
 
 ## 4. Demo-critical user journey
 
-The interface should support a three-minute story without requiring setup or live data entry.
+The interface should support a three-minute story without requiring teacher setup or live classroom-data entry. The visitor's short name is intentional temporary walkthrough input, not classroom setup.
 
 The journey maps to a <3-minute script with the timing budget and AI-narration hooks below. Narrate GPT-5.6 and Codex usage throughout, not as a separate segment.
 
 | Beat | Time | On screen | Narration hook |
 | --- | --- | --- | --- |
-| 1. Select the seeded student **Maya Chen** from the demo roster; Maya completes a five-question fixed fractions diagnostic. | ~40s | Diagnostic, one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
-| 2. The system reports a specific finding: *Maya adds fractions without first finding a common denominator* — inferred from **which** wrong answers she chose, not just that she missed them. | (in ~40s) | Diagnosis screen | Deterministic rules select the supported tag; GPT-5.6 renders it in student-friendly language (§8) |
-| 3. Maya receives practice for the prerequisite and uses the tutor's nudge → hint → guided-step ladder on a hard item without being handed the answer. | ~40s | Practice + hint ladder | GPT-5.6 generates Socratic laddered hints; leak check keeps the answer hidden |
-| 4. After a recorded miss and a requested `hint` or `guided_step`, Maya uses **Show your work**: she types what she tried and may add a photo. Rung returns one observation, one next step, and one check question without telling her whether she is correct. | ~30s | Work-based help card | GPT-5.6 Luna reads only the request in memory; server leak checks keep the answer hidden and deterministic scoring remains authoritative |
+| 1. A visitor starts a temporary non-production learner with a first name or nickname, then completes a five-question fixed fractions diagnostic. Maya remains the prepared fallback walkthrough. | ~40s | Name entry, then diagnostic one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
+| 2. The system reports a specific finding from the visitor's selected wrong answers, not simply that they missed a question. | (in ~40s) | Diagnosis screen | Deterministic rules select the supported tag; GPT-5.6 renders it in student-friendly language (§8) |
+| 3. The visitor receives prerequisite practice and uses the tutor's nudge → hint → guided-step ladder on a hard item without being handed the answer. | ~40s | Practice + hint ladder | GPT-5.6 generates Socratic laddered hints; leak check keeps the answer hidden |
+| 4. After the server records miss → `hint`/`guided_step` → later miss, the visitor uses **Show your work**: they type what they tried and may add a photo. Rung returns one observation, one next step, and one check question without telling them whether they are correct. | ~30s | Work-based help card | GPT-5.6 Luna reads only the request in memory; server leak checks keep the answer hidden and deterministic scoring remains authoritative |
 | 5. Switch to the teacher dashboard: the heatmap shows several students share the common-denominator gap; select that group; Rung shows a 15–20 minute next-day mini-lesson with a matched practice set and one verified video. | ~45s | Teacher heatmap → group → plan | GPT-5.6 drafted the grouped mini-lesson; the video was pre-vetted by GPT-5.6 (§7); Codex built the dashboard and grouping |
 
 The polished path must use seeded data and cached results. The demo must not depend on a live web search or on any model call for a result that is already required to appear.
@@ -124,7 +124,7 @@ The MVP may use the Next.js App Router with server components for read-heavy das
 
 Responsibilities:
 
-- Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In `DEMO_MODE`, resolve an isolated, allow-listed demo identity rather than accepting arbitrary client IDs.
+- Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In non-production `DEMO_MODE`, resolve either an explicitly allow-listed seed identity or a server-created temporary learner bound by an opaque httpOnly cookie; do not accept arbitrary client IDs.
 - Coordinate scoring, mastery updates, practice progression, and model calls.
 - Validate request shape and return stable, typed responses.
 - Log model request metadata and failures without storing secrets.
@@ -135,7 +135,7 @@ All mutation and model workflows cross this boundary. Browser code must not deci
 
 Supabase is the canonical store for curriculum, users, scored responses, mastery, groups, safe cached model outputs, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
 
-Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` is disabled in production and may only select pre-seeded, fictional allow-listed identities. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
+Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` fails closed in production. In non-production, a temporary participant is created server-side, enrolled in the demo class with a `not_started` mastery matrix, and resolved only through its opaque httpOnly cookie. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
 
 ### AI integration: OpenAI service adapter
 
@@ -187,10 +187,16 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `items` | Validated diagnostic/practice questions | `id`, `subskill_id`, `item_type`, `prompt`, `answer_spec`, `solution_steps`, `difficulty`, `is_active`, `distractor_map` |
 | `assignments` | Teacher-assigned diagnostic | `id`, `class_id`, `topic_id`, `title`, `mode` |
 | `assignment_items` | Stable diagnostic order | `assignment_id`, `item_id`, `position` |
-| `student_responses` | Every submitted diagnostic/practice answer | `id`, `student_id`, `item_id`, `answer_raw`, `is_correct`, `context`, `submitted_at` |
+| `student_responses` | Every submitted diagnostic/practice answer | `id`, `student_id`, `item_id`, `answer_raw`, `is_correct`, `context`, `diagnostic_session_id`, `practice_session_id`, `practice_session_item_id`, `submitted_at` |
 | `mastery` | Latest mastery status per student/sub-skill | `student_id`, `subskill_id`, `level`, `evidence_count`, `last_evaluated_at` |
-| `practice_sessions` | Generated/selected practice sequence | `id`, `student_id`, `topic_id`, `status`, `diagnosis_snapshot` |
+| `practice_sessions` | Generated/selected practice sequence | `id`, `student_id`, `topic_id`, `status`, `diagnosis_snapshot`, `diagnostic_session_id`, `completed_at` |
 | `practice_session_items` | Ordered selected practice items | `practice_session_id`, `item_id`, `position`, `status` |
+| `diagnostic_completions` | Stable deterministic/AI-safe completion result | `diagnostic_session_id`, `selected_subskill_id`, `misconception_tag`, `evidence`, `explanation_source`, `completion_version` |
+| `practice_plans` | Ordered generated plan metadata | `id`, `diagnostic_session_id`, explicit `position`, target skill, source/prompt/validator provenance |
+| `generated_practice_items` | Parametric provenance for a persisted generated item | `item_id`, `practice_plan_id`, `position`, `parametric_spec`, `validator_version` |
+| `practice_support_events` | Server-recorded support sequence metadata | occurrence/session IDs, `event_kind`, timestamp; never raw work or photos |
+| `practice_support_state` | Derived support/claim state per logical item | session, item, learner, miss/hint/correct/claim timestamps; never raw work or photos |
+| `demo_participant_sessions` | Non-production temporary learner session | `student_id`, `class_id`, one-way token hash, expiry/revocation timestamps |
 | `attempt_submissions` | **Legacy compatibility only:** former peer-gate attempt records; not used by the current work-help flow | `id`, `student_id`, `item_id`, `attempt_text`, `verification_status`, `verification_reason` |
 | `peer_solutions` | **Legacy compatibility only:** former curated worked examples; not rendered in the current student flow | `id`, `item_id`, `author_alias`, `approach_text`, `full_solution`, `is_vetted` |
 | `peer_unlocks` | **Legacy compatibility only:** former peer-gate state; not read by the current student flow | `student_id`, `item_id`, `approach_unlocked_at`, `full_solution_unlocked_at` |
@@ -213,8 +219,9 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 The schema above describes the desired canonical model. The following tables are required before the complete demo path can work:
 
 - `students`, `classes`, `class_enrollments`, `topics`, `subskills`, `items`
-- `assignments`, `assignment_items`, `student_responses`, `mastery`
-- `practice_sessions`, `practice_session_items`
+- `assignments`, `assignment_items`, `student_responses`, `mastery`, `diagnostic_completions`
+- `practice_sessions`, `practice_session_items`, `practice_plans`, `generated_practice_items`
+- `practice_support_events`, `practice_support_state`, `demo_participant_sessions`
 - `video_recommendations`
 - `ai_runs`
 
@@ -255,15 +262,17 @@ For the main demo student, the selected diagnosis must be stable: **finds no com
 2. Request a structured 3–4 item plan for each skill. The model may choose only a supported kind: `number_line`, `equivalent_fraction`, `common_denominator`, or `fraction_operation` (addition/subtraction with unlike denominators).
 3. Deterministically construct and validate every prompt and answer rule from the returned parameters. Reject the entire plan if any item is malformed, has the wrong kind for its skill, or fails its math constraint.
 4. A rejected plan falls back as a whole to that skill's validated fallback plan; other skill plans from the same diagnostic remain unaffected.
-5. The diagnosis result is the practice-plan hub. Completing one plan returns the learner to that hub, where completed plans stay visibly complete and remaining plans stay selectable for the lifetime of the local demo session.
+5. The diagnosis result is the practice-plan hub. Completing one plan returns the learner to that hub, where completed plans stay visibly complete and remaining plans stay selectable. The no-Supabase fallback is process-local; the durable path persists the completion and its plan metadata.
+
+For a durable learner, the server persists the complete validated 3–4 item plan atomically before returning it. Each plan has an explicit prerequisite-first `position`; retries read that position rather than timestamps, so the same ordered plan IDs are returned even if creation requests race.
 
 ### 8.1 Item generation pipeline
 
 Questions are **generated, not hard-coded** — but the model is limited to a typed item grammar and deterministic code owns the prompt construction and answer rule, so the model can never invent a wrong answer key. Both halves run in the demo path.
 
 1. **Typed parametric core (deterministic).** The supported grammar covers number lines, equivalent fractions, common denominators, and unlike-denominator addition/subtraction. A template derives the exact accepted-answer rule; common-denominator items accept any positive common multiple, not just the least common denominator.
-2. **LLM wrap (GPT-5.6).** The model is given the fixed operands and correct answer and asked to write a word-problem context around them, explicitly forbidden to change any number or introduce a second operation. This is where GPT-5.6 is load-bearing in item creation, and it is deliberately kept in the demo path.
-3. **Validator (deterministic, mandatory).** Re-derive the answer implied by the wrapped problem and confirm it equals the parametric answer, that no extra operation was introduced, and that the declared sub-skill still holds. On any failure, discard and retry once, then fall back to the bare parametric item from step 1. Nothing reaches a learner without passing this gate.
+2. **Optional LLM wrap (GPT-5.6).** The adapter can receive fixed operands and correct answer and propose a word-problem context, explicitly forbidden to change any number or introduce a second operation. This capability is not on the current seeded/rehearsal path; it must not replace a reviewed seed prompt until provenance and validator results are persisted.
+3. **Validator (deterministic, mandatory).** Re-derive the answer implied by a generated or wrapped problem and confirm it equals the parametric answer, that no extra operation was introduced, and that the declared sub-skill still holds. On any failure, discard the candidate and use the bare parametric item from step 1. Nothing reaches a learner without passing this gate.
 4. **Generate and cache for the demo.** The practice-plan adapter may generate operands live for a newly created learner session. Cache each validated plan by learner, selected gap, and prompt version. If the model is unavailable or validation fails, the demo uses the frozen validated bank immediately (§6 cache policy).
 
 The number picker must be seedable/deterministic (no `Math.random()` in a way that breaks reproducibility) so a fresh seed reproduces the same demo items (§18).
@@ -309,16 +318,19 @@ The tutor never accepts the model's assessment of mathematical correctness. Stud
 
 ### 9.3 Work-based help after a missed response
 
-This replaces the retired peer worked-example gate with individual, bounded coaching. A learner may receive one work-based help response only when both of these local flow conditions are true:
+This replaces the retired peer worked-example gate with individual, bounded coaching. A learner may receive one work-based help response only when the server has recorded this exact sequence for the same logical practice item:
 
-1. The server has deterministically scored and recorded a response for the current item as missed.
-2. The learner has actively requested a `hint` or `guided_step` for that same item and is still stuck.
+1. A deterministically scored missed response.
+2. A requested substantive `hint` or `guided_step` (a `nudge` does not qualify).
+3. A later deterministically scored missed response after that support.
+
+The server records these events against the owned, current practice-session occurrence and atomically reserves the one allowed work-help response before an AI call. The claim is logical-item scoped across a requeue, a correct response ends eligibility, and a failed model request releases the reservation. This sequence is enforced in both the local non-production fallback and the durable Supabase path; it is never inferred from browser state or a client-provided catalog item ID.
 
 The card is titled **“Still stuck? Show your work.”** It has one required typed field, “What have you tried?”, and one optional photo field. The typed field asks for a first step, equation, diagram description, or strategy; it is not an answer field and never becomes scoring evidence. The card is not shown after a correct response, after a `nudge` alone, or as a replacement for deterministic answer checking.
 
-`POST /api/work-help` is a server-authenticated multipart request. It sends `studentId`, `itemId`, `writtenWork`, and `supportLevel` (`hint` or `guided_step`), plus an optional `photo`. The route accepts only JPEG, PNG, or WebP uploads no larger than 5 MiB. It validates content type and image signature, converts an accepted image to an in-memory data URL only long enough to call the adapter, and does not write it to disk, Supabase Storage, database rows, logs, cache values, or the response.
+`POST /api/work-help` is a server-authenticated multipart request. The current session-owned form sends `studentId`, `practiceSessionId`, `practiceSessionItemId`, `writtenWork`, and `supportLevel` (`hint` or `guided_step`), plus an optional `photo`; the server resolves the trusted item from that occurrence. A catalog `itemId` is legacy/advisory and cannot select a generated item. The route accepts only JPEG, PNG, or WebP uploads no larger than 5 MiB. It validates content type and image signature, converts an accepted image to an in-memory data URL only long enough to call the adapter, and does not write it to disk, Supabase Storage, database rows, logs, cache values, or the response.
 
-The adapter sends the current safe item context, typed work, and optional image to GPT-5.6 Luna. Server-only protected answer values and solution-step strings are used only for answer-leak checks. The returned `WorkAnalysis` is bounded to:
+The adapter sends the current safe item context, typed work, and optional image to GPT-5.6 Luna. Server-only protected answer values, answer-rule variants, and solution-step strings are used only for answer-leak checks and are not sent to the model. The returned `WorkAnalysis` is bounded to:
 
 - `observation` — a supportive pattern the learner can examine;
 - `nextStep` — one actionable next move; and
@@ -382,15 +394,17 @@ Exact routing may evolve, but server operations must have these contracts.
 
 | Operation | Request | Response |
 | --- | --- | --- |
+| `POST /api/demo/participant` | non-production `{ displayName }` | public temporary participant fields; sets opaque httpOnly cookie |
+| `GET /api/demo/participant` | non-production participant cookie | current public participant fields, or missing/expired/invalid session status |
 | `POST /api/responses` | authenticated actor, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, ordered selectable practice-plan cards |
 | `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
-| `POST /api/tutor/hint` | authenticated student, `itemId`, `practiceSessionId`, `attempt`, `level` | safe hint for a seeded or generated session item, source (`ai`, `cache`, or `fallback`) |
-| `POST /api/work-help` | authenticated student, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
+| `POST /api/tutor/hint` | authenticated student, owned `practiceSessionId` + `practiceSessionItemId`, `attempt`, `level` | safe hint for that session occurrence, source (`ai`, `cache`, or `fallback`) |
+| `POST /api/work-help` | authenticated student, owned `practiceSessionId` + `practiceSessionItemId`, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
 
-All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and may resolve only allow-listed fictional demo identities.
+All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and always disabled in production. In non-production it may resolve an allow-listed fictional seed identity or a server-created temporary participant bound by an opaque, httpOnly cookie.
 
 ### 11.1 Shared API contract
 
@@ -400,7 +414,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 
 ### Student routes
 
-- `/demo` — non-production, environment-gated selector for allow-listed fictional demo identities only.
+- `/demo` — non-production, environment-gated walkthrough entry. A visitor enters a first name or nickname and receives a server-created, cookie-bound temporary learner identity. Maya remains an explicit secondary prepared walkthrough for rehearsal or recovery; an expired or invalid temporary session never falls through to Maya.
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
 - `/student/diagnosis` — evidence-oriented plain language and a practice-plan hub: one selectable card per missed skill, with completed cards retained as completed when the learner returns from another plan.
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
@@ -438,7 +452,7 @@ The demo dataset is a product asset, not placeholder data.
 It must include:
 
 - One class with 8–12 named-but-fictional students.
-- Maya as the primary walkthrough student.
+- Maya as the prepared secondary walkthrough and recovery path. The primary visitor path creates a fictional, temporary learner for the current non-production walkthrough.
 - At least three students with the common-denominator gap, so the teacher group is convincing.
 - At least one student in each visible mastery state to make the heatmap legible.
 - Exactly five fixed, ordered diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
@@ -447,7 +461,9 @@ It must include:
 - One 15–20 minute plan for the common-denominator teacher group.
 - A rehearsed text-only work-help fallback for the primary practice item; optional demo photos are provided only at request time and are not seeded or retained.
 
-Diagnostic and practice items are produced by the §8.1 generation pipeline (parametric core + LLM wrap + validator) and then **frozen** into the seed, not hand-typed. "Seeded" here means the generated, validated demo set is captured so a fresh reset reproduces it exactly — the pipeline runs at authoring time, not on stage. All names, work samples, and responses must be fictional. Do not use real student information in local seeds, screenshots, prompts, or logs.
+The canonical seed is reviewed and reproducible. Runtime-generated practice plans use the §8.1 parametric core and validator before they are persisted. The optional LLM wrapping capability is not currently used to replace a seed prompt; it requires persisted provenance and validation before it may do so. `npm run seed` removes temporary learners and their runtime data before restoring the canonical class. All names, work samples, and responses must be fictional. Do not use real student information in local seeds, screenshots, prompts, or logs.
+
+A temporary walkthrough cookie lasts eight hours. Expired durable participant rows are not yet removed by a scheduled cleanup job; `npm run seed` is the current explicit reset path. This is acceptable only for the fictional, non-production walkthrough and is not a retention design for real learners.
 
 ## 15. Reliability and safety checklist
 
@@ -536,7 +552,8 @@ The hard rule is that Tracks A, B, and C do not start until Phase-0 contracts an
 
 The MVP is ready when all statements below are true:
 
-- A fresh database seed produces the same credible demo class and Maya journey.
+- A fresh database seed produces the same credible demo class and prepared Maya fallback journey.
+- A temporary walkthrough learner's server-owned diagnostic, practice, and mastery evidence appears in the teacher heatmap for the lifetime of the non-production demo session.
 - The student flow completes from diagnostic through an answer-safe work-help escalation without manual database edits.
 - Maya receives the specific common-denominator diagnosis based on deterministic answer evidence.
 - Tutor help has three visible levels and never displays the final answer.
@@ -557,6 +574,7 @@ These are intentionally not decided for the hackathon MVP. Do not introduce them
 - Automated video ingestion and ongoing content review process.
 - Production moderation for user-generated peer content.
 - Full deletion, consent, privacy, and compliance controls required for minors beyond the 30-day attempt-retention boundary.
+- A production sign-in/onboarding experience. The current production route boundary requires a Supabase Auth access token, but the browser login UI is intentionally not inferred from the non-production walkthrough.
 - Pricing, district procurement, and LMS integrations.
 
 When Rung moves beyond a prototype, these decisions require dedicated design and review rather than incremental feature work.
