@@ -2,21 +2,69 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/app-shell";
-import { AnswerInput } from "@/components/student/answer-input";
-import { ProgressIndicator } from "@/components/student/progress-indicator";
-import { Badge, Eyebrow, buttonClasses } from "@/components/ui";
+import { StudentShell } from "@/components/student/surface/student-shell";
+import { RungProgress } from "@/components/student/surface/rung-progress";
+import { FractionExpression } from "@/components/student/fraction";
+import { FractionInput } from "@/components/student/fraction-input";
+import { Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 
 type DiagnosticItem = { id: string; prompt: string; subskillId: string; position: number };
 type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: DiagnosticItem[] };
 
+// One short hint per subskill. Kept intentionally light — a nudge toward the method, never the
+// answer — since a diagnostic measures where the student is, and any hint they lean on flags that
+// subskill for extra reps in the follow-up practice set.
+const hintsBySubskill: Record<string, string> = {
+  "equivalent-fractions": "Multiply the top and bottom by the same number — the value stays the same.",
+  "fraction-number-line": "Split the line from 0 to 1 into equal parts that match the denominator, then count up.",
+  "find-common-denominator": "Look for a number that both denominators divide into evenly.",
+  "add-unlike-denominators": "Rewrite both fractions over a common denominator first, then add just the numerators.",
+  "subtract-unlike-denominators": "Rewrite both fractions over a common denominator first, then subtract just the numerators.",
+};
+const fallbackHint = "Think about what the denominators are telling you before you combine the fractions.";
+
+// The external action button submits the FractionInput's form via the `form` attribute, so
+// Check and Next can morph in one fixed position at the bottom of the card.
+const ANSWER_FORM_ID = "diagnostic-answer-form";
+
+// Decorative ladder rungs for the side margins on very wide screens: the climb motif makes the
+// quiet space beside the centered column read as designed, not empty. Bottom rung is the most
+// solid (where you start), fading as the ladder climbs. Purely visual — aria-hidden.
+const RUNG_MOTIF_OPACITIES = [0.16, 0.3, 0.45, 0.62, 0.8];
+
+function RungMotif({ side }: { side: "left" | "right" }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-y-0 hidden flex-col justify-center gap-10 xl:flex 2xl:gap-12 ${
+        side === "left" ? "left-2 2xl:left-10" : "right-2 2xl:right-10"
+      }`}
+    >
+      {RUNG_MOTIF_OPACITIES.map((opacity, index) => (
+        <span
+          key={index}
+          className="h-1 w-12 rounded-full bg-border-strong 2xl:w-16"
+          style={{ opacity }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function DiagnosticPage() {
   const router = useRouter();
   const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
+  // The framing copy earns its display size exactly once — as an intro step — instead of sitting
+  // beside every question as a permanent second focal point.
+  const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
   const [recorded, setRecorded] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Item ids the student revealed a hint on — sent with the answer so completion can add extra
+  // practice for those subskills. Persists across questions; the current item's flag is derived below.
+  const [hintedItems, setHintedItems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}?studentId=${canonicalDemoIds.mayaStudentId}`)
@@ -26,22 +74,35 @@ export default function DiagnosticPage() {
   }, []);
 
   const item = diagnostic?.items[index];
-  const isLastItem = Boolean(diagnostic && index === diagnostic.items.length - 1);
+  const total = diagnostic?.items.length ?? 0;
+  const isLastItem = Boolean(diagnostic && index === total - 1);
+  const hintUsed = Boolean(item && hintedItems.has(item.id));
+  const hintText = item ? hintsBySubskill[item.subskillId] ?? fallbackHint : "";
+
+  function revealHint() {
+    if (!item) return;
+    setHintedItems((current) => new Set(current).add(item.id));
+  }
 
   async function handleSubmit(answer: string) {
-    if (!diagnostic || !item) return;
+    if (!diagnostic || !item || submitting) return;
     setError(null);
-    const response = await fetch("/api/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic" }),
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setError(body.error ?? "Could not record answer");
-      return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic", usedHint: hintedItems.has(item.id) }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setError(body.error ?? "Could not record answer");
+        return;
+      }
+      setRecorded(true);
+    } finally {
+      setSubmitting(false);
     }
-    setRecorded(true);
   }
 
   function handleNext() {
@@ -55,28 +116,141 @@ export default function DiagnosticPage() {
   }
 
   return (
-    <AppShell active="student">
-      <section className="max-w-2xl space-y-8">
-        <div>
-          <Eyebrow className="mb-2">Fractions check-in</Eyebrow>
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Diagnostic</h1>
-          <p className="mt-3 text-ink-muted">A few questions to see what will be most useful to practice next.</p>
-        </div>
-        {!diagnostic && <p className="text-ink-muted">{error ?? "Loading your diagnostic…"}</p>}
-        {diagnostic && item && (
-          <>
-            <ProgressIndicator completed={index} total={diagnostic.items.length} label="Question" />
-            <div className="space-y-5 rounded-xl border border-border bg-surface p-6">
-              <Badge tone="neutral">Item {index + 1} of {diagnostic.items.length}</Badge>
-              <p className="text-2xl font-semibold tracking-tight text-ink">{item.prompt}</p>
-              <AnswerInput key={item.id} label={`Your answer to ${item.prompt}`} disabled={recorded} onSubmit={handleSubmit} />
-              {recorded && <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-ink-muted">Answer recorded.</p>}
-              {error && <p className="text-sm text-red-700">{error}</p>}
+    <StudentShell size="wide">
+      {/* One centered reading column — a single focal plane, like every one-question-at-a-time
+          flow. The wide shell keeps the header/footer chrome spanning the viewport as an anchor,
+          and the space beside the column is treated (glow + rung motif) so it reads as designed
+          quiet rather than void. */}
+      <section className="relative flex flex-1 items-center justify-center">
+        {/* Soft spark-gold pool of light behind the card so the focal object sits in a lit spot
+            on the canvas instead of floating on one flat wash. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[26rem] w-full max-w-[52rem] -translate-x-1/2 -translate-y-1/2 opacity-70 blur-3xl"
+          style={{ background: "radial-gradient(closest-side, var(--spark-soft), transparent)" }}
+        />
+        <RungMotif side="left" />
+        <RungMotif side="right" />
+
+        <div className="relative mx-auto w-full max-w-3xl py-8">
+          {!started && (
+            // Intro step: the reassurance framing gets the stage to itself once, then hands the
+            // screen over to the questions.
+            <div className="animate-rise flex flex-col items-center text-center">
+              <Eyebrow className="mb-3">Fractions check-in</Eyebrow>
+              <h1 className="text-balance text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
+                Let&rsquo;s find your starting rung.
+              </h1>
+              <p className="mt-4 max-w-md text-pretty text-ink-muted sm:text-lg">
+                A few quick questions — no grade, no wrong way to start. Rung just uses them to
+                point you at the practice that will help the most.
+              </p>
+              <button
+                type="button"
+                onClick={() => setStarted(true)}
+                className={buttonClasses("focus", "lg", "mt-8 px-10")}
+              >
+                Start the check-in
+              </button>
+              {error && <p className="mt-4 text-sm text-red-700">{error}</p>}
             </div>
-            <div className="flex justify-end"><button type="button" disabled={!recorded} onClick={handleNext} className={buttonClasses("primary", "md", !recorded ? "pointer-events-none opacity-50" : undefined)}>{isLastItem ? "See my results" : "Next"}</button></div>
-          </>
-        )}
+          )}
+
+          {started && !diagnostic && (
+            error
+              ? <p className="text-center text-ink-muted">{error}</p>
+              // Skeleton keeps the layout stable (no jump when questions arrive) and reads as
+              // "working" rather than bare text stranded in empty space.
+              : <div aria-hidden="true" className="animate-pulse space-y-4 rounded-2xl border border-border bg-surface p-8 shadow-md">
+                  <div className="mx-auto h-10 w-3/4 rounded bg-surface-2" />
+                  <div className="h-px w-full bg-border" />
+                  <div className="mx-auto h-12 w-1/2 rounded bg-surface-2" />
+                </div>
+          )}
+
+          {started && diagnostic && item && (
+            <div className="space-y-6">
+              <h1 className="sr-only">Fractions check-in</h1>
+              {/* The branded rung ladder counts the question you're on (1 of 5, never 0 of 5) and
+                  fills a rung gold as you climb — the metaphor made visible on screen. */}
+              <RungProgress current={index + 1} total={total} label="Question" />
+
+              {/* One elevated card is the single focal point. Top-to-bottom reading order only:
+                  question, answer, help, action — no horizontal eye travel. */}
+              <div key={item.id} className="animate-rise rounded-2xl border border-border bg-elevated shadow-lg">
+                {/* Question zone */}
+                <div className="flex justify-center p-8 text-center sm:p-10 2xl:p-14">
+                  <FractionExpression text={item.prompt} size="lg" className="justify-center 2xl:text-4xl" />
+                </div>
+
+                {/* Answer zone: inputs mirror the stacked fraction in the prompt, the hint stays a
+                    quiet text affordance until asked for, and one primary button holds the bottom
+                    slot — Check morphs into Next in place once the answer is saved. */}
+                <div className="flex flex-col items-center gap-6 border-t border-border p-8 sm:p-10 2xl:p-12">
+                  <FractionInput
+                    key={item.id}
+                    formId={ANSWER_FORM_ID}
+                    showSubmit={false}
+                    label={`Your answer to ${item.prompt}`}
+                    disabled={recorded}
+                    onSubmit={handleSubmit}
+                    className="items-center text-center"
+                  />
+
+                  {hintUsed ? (
+                    // Blue is the support signal in this system (green stays "correct"). The note
+                    // flags the consequence honestly: this kind of question comes back afterward.
+                    <div className="animate-rise w-full rounded-lg border border-focus bg-focus-soft p-4 text-left">
+                      <p className="text-sm font-semibold text-focus">Hint</p>
+                      <p className="mt-1.5 text-sm text-ink">{hintText}</p>
+                      <p className="mt-2.5 text-sm text-ink-muted">You&rsquo;ll get extra practice on this kind of question.</p>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={revealHint}
+                      disabled={recorded}
+                      className="text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      Stuck? Show a hint
+                    </button>
+                  )}
+
+                  <div aria-live="polite" className="flex w-full flex-col items-center gap-3 empty:hidden">
+                    {recorded && (
+                      // Momentum-gold, not correct-green: a diagnostic saves your thinking, it
+                      // doesn't grade it. Gold says "logged, keep moving" without implying right/wrong.
+                      <p className="animate-pop rounded-lg border border-spark bg-spark-soft px-4 py-2.5 text-sm font-medium text-spark-ink">
+                        Got it — your answer is saved.
+                      </p>
+                    )}
+                    {error && <p className="text-sm text-red-700">{error}</p>}
+                  </div>
+
+                  {!recorded ? (
+                    <button
+                      type="submit"
+                      form={ANSWER_FORM_ID}
+                      disabled={submitting}
+                      className={buttonClasses("focus", "lg", "w-full sm:w-72")}
+                    >
+                      Check
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className={buttonClasses("focus", "lg", "animate-pop w-full sm:w-72")}
+                    >
+                      {isLastItem ? "See my results" : "Next question"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
-    </AppShell>
+    </StudentShell>
   );
 }

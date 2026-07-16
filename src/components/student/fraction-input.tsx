@@ -11,10 +11,18 @@ export function FractionInput({
   onSubmit,
   disabled = false,
   label = "Your answer",
+  formId,
+  showSubmit = true,
+  className,
 }: {
   onSubmit: (answer: string) => void;
   disabled?: boolean;
   label?: string;
+  /** Lets an external button drive submission via the `form` attribute (used with showSubmit=false). */
+  formId?: string;
+  /** Hide the built-in Check button when the surrounding layout renders its own action button. */
+  showSubmit?: boolean;
+  className?: string;
 }) {
   const [numerator, setNumerator] = useState("");
   const [denominator, setDenominator] = useState("");
@@ -38,41 +46,61 @@ export function FractionInput({
   );
 
   return (
-    <form className="flex flex-col gap-4 sm:flex-row sm:items-center" onSubmit={submit}>
-      <fieldset disabled={disabled} className="flex items-start gap-3">
-        <legend className="sr-only">{label}</legend>
-        <div className="flex flex-col items-center gap-1">
-          <label className="sr-only" htmlFor={numeratorId}>
-            Numerator
-          </label>
-          <input
-            id={numeratorId}
-            inputMode="numeric"
-            autoComplete="off"
-            value={numerator}
-            onChange={(event) => setNumerator(event.target.value)}
-            placeholder="7"
-            className={fieldClasses}
-          />
-          <span aria-hidden="true" className="block h-[2px] w-full bg-ink" />
-          <label className="sr-only" htmlFor={denominatorId}>
-            Denominator
-          </label>
-          <input
-            id={denominatorId}
-            inputMode="numeric"
-            autoComplete="off"
-            value={denominator}
-            onChange={(event) => setDenominator(event.target.value)}
-            placeholder="12"
-            className={fieldClasses}
-          />
-        </div>
-        <p className="max-w-[9rem] pt-1 text-xs text-ink-faint">Just one number? Leave the bottom box blank.</p>
-      </fieldset>
-      <button type="submit" disabled={disabled || !numerator.trim()} className={buttonClasses("focus", "lg")}>
-        Check
-      </button>
+    // Left-anchored cluster: the stacked input and the Check button sit together (never split to
+    // opposite edges), with the helper hint tucked underneath. Reads as one tidy control group.
+    // Pass className="items-center text-center" (+ showSubmit={false}) for centered card layouts.
+    <form id={formId} className={cn("flex flex-col gap-3", className)} onSubmit={submit}>
+      <div className="flex items-center gap-5">
+        <fieldset
+          disabled={disabled}
+          className="flex items-center gap-4"
+          // Explicit Enter-to-submit: with the visible action button potentially outside the form
+          // (showSubmit=false), implicit submission is browser-dependent — this makes it certain.
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || disabled) return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        >
+          <legend className="sr-only">{label}</legend>
+          <div className="flex flex-col items-center gap-1">
+            <label className="sr-only" htmlFor={numeratorId}>
+              Numerator
+            </label>
+            <input
+              id={numeratorId}
+              inputMode="numeric"
+              autoComplete="off"
+              value={numerator}
+              onChange={(event) => setNumerator(event.target.value)}
+              placeholder="7"
+              className={fieldClasses}
+            />
+            <span aria-hidden="true" className="block h-[2px] w-full bg-ink" />
+            <label className="sr-only" htmlFor={denominatorId}>
+              Denominator
+            </label>
+            <input
+              id={denominatorId}
+              inputMode="numeric"
+              autoComplete="off"
+              value={denominator}
+              onChange={(event) => setDenominator(event.target.value)}
+              placeholder="12"
+              className={fieldClasses}
+            />
+          </div>
+        </fieldset>
+        {showSubmit && (
+          <button type="submit" disabled={disabled || !numerator.trim()} className={buttonClasses("focus", "lg", "px-8")}>
+            Check
+          </button>
+        )}
+      </div>
+      {/* With the visible action button rendered outside the form (via the form attribute), this
+          invisible in-form submit button keeps Enter-to-submit working in every browser. */}
+      {!showSubmit && <button type="submit" hidden tabIndex={-1} aria-hidden="true" />}
+      <p className="text-sm text-ink-muted">Just one number? Leave the bottom box blank.</p>
     </form>
   );
 }

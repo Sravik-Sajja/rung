@@ -69,7 +69,7 @@ const masteryLevelsByStudent: Record<string, Array<typeof masteryLevels[number]>
 const groupPlans = [
   { id: canonicalTeacherGroupIds[0], subskillId: canonicalDemoSubskillIds[0], objective: "Create and recognize equivalent fractions using visual and numerical models.", durationMinutes: 15, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[0]], videoTitle: "Equivalent fractions with visual models" },
   { id: canonicalTeacherGroupIds[1], subskillId: canonicalDemoSubskillIds[1], objective: "Locate benchmark fractions accurately on a number line.", durationMinutes: 15, materials: ["Number-line strips", "Pencils"], practiceItemIds: [canonicalTeacherPracticeItemIds[1]], videoTitle: "Fractions on a number line" },
-  { id: canonicalTeacherGroupIds[2], subskillId: canonicalDemoSubskillIds[2], objective: "Find a shared denominator before combining fractions with unlike denominators.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards", "Practice cards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[3]], videoTitle: "Finding common denominators" },
+  { id: canonicalTeacherGroupIds[2], subskillId: canonicalDemoSubskillIds[2], objective: "Find a shared denominator before combining fractions with unlike denominators.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards", "Practice cards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[3]], videoTitle: "Adding fractions with unlike denominators" },
   { id: canonicalTeacherGroupIds[3], subskillId: canonicalDemoSubskillIds[3], objective: "Add fractions with unlike denominators by renaming each fraction first.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[3]], videoTitle: "Adding fractions with unlike denominators" },
   { id: canonicalTeacherGroupIds[4], subskillId: canonicalDemoSubskillIds[4], objective: "Subtract fractions with unlike denominators after renaming each fraction.", durationMinutes: 18, materials: ["Fraction strips", "Whiteboards"], practiceItemIds: [canonicalTeacherPracticeItemIds[2], canonicalTeacherPracticeItemIds[4]], videoTitle: "Subtracting fractions with unlike denominators" },
 ] as const;
@@ -128,9 +128,22 @@ async function seed() {
     id: `${plan.id}-plan`, teacher_group_id: plan.id, prompt_version: "seed-v1", status: "cached",
     content: { objective: plan.objective, durationMinutes: plan.durationMinutes, materials: plan.materials, practiceItemIds: plan.practiceItemIds, checkForUnderstanding: "Students explain their strategy before sharing an answer." },
   }))));
-  await assertNoError(await supabase.from("video_recommendations").upsert(groupPlans.map((plan) => ({
-    id: `${plan.subskillId}-video`, subskill_id: plan.subskillId, title: plan.videoTitle, provider: "Rung reviewed resource", url: "#", verification_note: "Placeholder; replace with a manually reviewed video before rehearsal.", is_active: true,
-  }))));
+  await assertNoError(await supabase.from("video_recommendations").upsert(groupPlans.map((plan) => {
+    const isPrimaryCommonDenominatorPlan = plan.subskillId === commonDenominatorSubskillId;
+    return {
+      id: `${plan.subskillId}-video`,
+      subskill_id: plan.subskillId,
+      title: plan.videoTitle,
+      provider: isPrimaryCommonDenominatorPlan ? "Khan Academy" : "Rung reviewed resource",
+      url: isPrimaryCommonDenominatorPlan
+        ? "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/adding-small-fractions-with-unlike-denominators"
+        : "#",
+      verification_note: isPrimaryCommonDenominatorPlan
+        ? "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the primary Maya/common-denominator group."
+        : "Placeholder; replace with a manually reviewed video before rehearsal.",
+      is_active: true,
+    };
+  })));
 
   console.log(`Seeded ${students.length} students, ${subskills.length} sub-skills, ${masteryRows.length} mastery records, and ${teacherGroups.length} cached group plans for ${classId}.`);
 }

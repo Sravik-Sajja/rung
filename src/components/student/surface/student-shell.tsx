@@ -1,22 +1,35 @@
 // Focused, momentum-forward frame for the student surface — lighter chrome than the teacher AppShell.
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { cn } from "@/components/ui";
+
+// "focused" is the default reading column for a single flow; "wide" opens the frame for layouts
+// that fill the horizontal space on purpose (e.g. a two-column question + context split). "wide"
+// scales in steps with the viewport so big monitors fill out while small screens stay comfortable.
+const widthClass = {
+  focused: "max-w-xl",
+  wide: "max-w-2xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-[88rem]"
+} as const;
 
 export function StudentShell({
   children,
   aside,
-  exitHref = "/demo"
+  exitHref = "/demo",
+  size = "focused"
 }: {
   children: ReactNode;
   aside?: ReactNode;
   exitHref?: string;
+  size?: keyof typeof widthClass;
 }) {
+  const container = cn("mx-auto w-full px-5", widthClass[size]);
+
   return (
     <div className="flex min-h-screen flex-col bg-bg text-ink">
       {/* Header sits one step up the elevation ladder (bg-surface + shadow-sm) so the neutral
           bg-bg canvas reads as a distinct plane underneath it, not one flat wash. */}
       <header className="border-b border-border bg-surface shadow-sm">
-        <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-4 px-5 py-3">
+        <div className={cn(container, "flex items-center justify-between gap-4 py-3")}>
           <span className="inline-flex items-center gap-2 text-base font-extrabold tracking-tight text-ink">
             <span aria-hidden="true" className="h-2 w-2 rounded-full bg-spark" />
             Rung
@@ -30,9 +43,9 @@ export function StudentShell({
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col px-5 py-8">{children}</main>
+      <main className={cn(container, "flex flex-1 flex-col py-8")}>{children}</main>
 
-      <footer className="mx-auto w-full max-w-xl px-5 pb-6">
+      <footer className={cn(container, "pb-6")}>
         <p className="font-mono text-xs text-ink-faint">Prototype · practice, not a test</p>
       </footer>
     </div>

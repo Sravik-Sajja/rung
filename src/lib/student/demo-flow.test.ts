@@ -31,12 +31,23 @@ describe("student demo flow", () => {
     const meaningful = await submitLocalPeerAttempt({ studentId: maya, itemId: "add-unlike-1", attemptText: "I changed the denominators to 12.", explanation: "I tried to rewrite both fractions as twelfths before adding." });
     expect(meaningful?.unlocks.approachUnlocked).toBe(true);
     expect(meaningful?.unlocks.fullSolutionUnlocked).toBe(false);
-    expect(getLocalPeerSolution(maya, "add-unlike-1")?.access).toBe("approach");
+    expect(getLocalPeerSolution(maya, "add-unlike-1")).toMatchObject({
+      access: "approach",
+      peerSolution: {
+        authorAlias: "Jordan",
+        approachText: "I noticed the denominators did not match, so I found a shared denominator before I tried to add.",
+      },
+    });
   });
 
   it("unlocks a full peer solution only after a correct deterministic score", async () => {
     await submitLocalPeerAttempt({ studentId: maya, itemId: "add-unlike-1", attemptText: "I changed the denominators to 12.", explanation: "I tried to rewrite both fractions as twelfths before adding." });
     recordLocalResponse({ studentId: maya, itemId: "add-unlike-1", answer: "7/12", context: "practice" });
-    expect(getLocalPeerSolution(maya, "add-unlike-1")?.access).toBe("full_solution");
+    expect(getLocalPeerSolution(maya, "add-unlike-1")).toMatchObject({
+      access: "full_solution",
+      peerSolution: {
+        fullSolution: "A common denominator is 12. Rewrite 1/3 as 4/12 and 1/4 as 3/12. Then add the numerators: 4/12 + 3/12 = 7/12.",
+      },
+    });
   });
 });

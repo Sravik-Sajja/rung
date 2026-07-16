@@ -1,5 +1,6 @@
 // Deterministic local fallback for the student API flow. Supabase-backed services can replace this boundary without changing route contracts.
 import { fallbackAiAdapter } from "@/lib/ai/adapter";
+import { getMayaPeerWorkedExample } from "@/lib/content/maya-fractions";
 import { canonicalDemoIds, canonicalDemoSubskillIds } from "@/lib/demo/contracts";
 import { demoDiagnosticItems, demoItems, demoStudents, findDemoItem } from "@/lib/demo-data";
 import { scoreAnswer } from "@/lib/math/scoring";
@@ -105,9 +106,19 @@ export function getLocalPeerSolution(studentId: string, itemId: string) {
   if (!isKnownStudent(studentId) || !demoItems.some((item) => item.id === itemId)) return null;
   const unlock = peerUnlocks.get(peerKey(studentId, itemId)) ?? { approach: false, fullSolution: false };
   if (!unlock.approach) return { itemId, access: "locked" as const, message: "Show a meaningful attempt to see a peer’s approach." };
-  const peerSolution = { authorAlias: "Jordan", approachText: "I rewrote both fractions so they had the same denominator before combining the numerators." };
+  const reviewedExample = getMayaPeerWorkedExample(itemId);
+  const peerSolution = reviewedExample
+    ? { authorAlias: reviewedExample.authorAlias, approachText: reviewedExample.approachText }
+    : { authorAlias: "Jordan", approachText: "I rewrote both fractions so they had the same denominator before combining the numerators." };
   if (!unlock.fullSolution) return { itemId, access: "approach" as const, peerSolution, message: "Solve the item correctly to see the complete worked solution." };
-  return { itemId, access: "full_solution" as const, peerSolution: { ...peerSolution, fullSolution: "1/3 is 4/12 and 1/4 is 3/12, so 4/12 + 3/12 = 7/12." } };
+  return {
+    itemId,
+    access: "full_solution" as const,
+    peerSolution: {
+      ...peerSolution,
+      fullSolution: reviewedExample?.fullSolution ?? "1/3 is 4/12 and 1/4 is 3/12, so 4/12 + 3/12 = 7/12.",
+    },
+  };
 }
 
 function getOrCreatePracticeSession(studentId: string) {

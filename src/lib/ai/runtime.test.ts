@@ -83,6 +83,44 @@ describe("live AI adapter resolution", () => {
     expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
   });
 
+  it("uses Maya's reviewed hint ladder when the item-specific fallback is needed", async () => {
+    const adapter = createAiAdapter({ completionClient: null, runStore: new FakeRunStore() });
+
+    const result = await adapter.tutorHint({
+      ...tutorInput(),
+      item: { ...safeItem, id: "common-denominator-1" },
+      level: "guided_step",
+    });
+
+    expect(result.source).toBe("fallback");
+    expect(result.hint).toBe("Make one column that counts by 3 and another that counts by 4. Compare the columns until a number appears in both.");
+  });
+
+  it("uses the selected deterministic misconception tag for Maya's diagnosis fallback", async () => {
+    const adapter = createAiAdapter({ completionClient: null, runStore: new FakeRunStore() });
+
+    const result = await adapter.diagnoseExplanation({
+      studentId: "maya-chen",
+      assignmentId: "diagnostic-fractions-v1",
+      gradeBand: "6-8",
+      targetSubskillId: "find-common-denominator",
+      supportedMisconceptionTags: ["adds_denominators"],
+      evidence: [{
+        itemId: "diagnostic-common-denominator-1",
+        subskillId: "find-common-denominator",
+        misconceptionTag: "adds_denominators",
+        selectedAnswer: "7",
+      }],
+      promptVersion: "diagnosis-v2-maya-fractions",
+    });
+
+    expect(result).toMatchObject({
+      source: "fallback",
+      misconceptionTag: "adds_denominators",
+      observation: "Your response combined denominators instead of looking for a shared denominator.",
+    });
+  });
+
   it("fails closed for peer verification when neither live nor cached output is available", async () => {
     const adapter = createAiAdapter({
       completionClient: new FakeCompletionClient(new Error("offline")),

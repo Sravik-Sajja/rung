@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { completeDemoDiagnostic, getDemoPractice, recordDemoDiagnosticResponse, recordDemoPracticeResponse, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { completeDemoDiagnostic, getDemoPractice, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { canonicalDemoIds, canonicalDiagnosticItemIds } from "@/lib/demo/contracts";
 
 describe("demo diagnostic to practice journey", () => {
+  beforeEach(resetDemoLearningStore);
+  afterEach(resetDemoLearningStore);
+
   it("creates common-denominator practice from Maya's diagnostic miss", () => {
     const diagnostic = startDemoDiagnostic(canonicalDemoIds.mayaStudentId);
     const answers: Record<string, string> = {
@@ -36,5 +39,22 @@ describe("demo diagnostic to practice journey", () => {
     const retry = recordDemoPracticeResponse({ practiceSessionId: completed.practiceSession.id, practiceSessionItemId: first.practiceSessionItemId, studentId: canonicalDemoIds.mayaStudentId, answer: "12" })!;
     expect(retry.isCorrect).toBe(true);
     expect(retry.practice.session.currentItemId).toBe("common-denominator-2");
+  });
+
+  it("keeps an active diagnostic available after a Next development module reload", async () => {
+    const first = await import("@/lib/student/demo-learning-store");
+    first.resetDemoLearningStore();
+    const diagnostic = first.startDemoDiagnostic(canonicalDemoIds.mayaStudentId);
+
+    vi.resetModules();
+    const reloaded = await import("@/lib/student/demo-learning-store");
+    const response = reloaded.recordDemoDiagnosticResponse({
+      diagnosticSessionId: diagnostic.diagnosticSessionId,
+      studentId: canonicalDemoIds.mayaStudentId,
+      itemId: "equivalent-1",
+      answer: "4/8",
+    });
+
+    expect(response).toMatchObject({ isCorrect: true });
   });
 });

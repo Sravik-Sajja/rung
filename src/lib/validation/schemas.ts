@@ -8,6 +8,9 @@ export const responseSchema = z.discriminatedUnion("context", [
     answer: z.string().min(1),
     context: z.literal("diagnostic"),
     diagnosticSessionId: z.string().min(1),
+    // Whether the student revealed a hint before answering. Drives extra reps of this subskill
+    // in the follow-up practice set (see completeDemoDiagnostic).
+    usedHint: z.boolean().optional(),
   }),
   z.object({
     studentId: z.string().min(1),

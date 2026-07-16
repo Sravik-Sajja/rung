@@ -52,7 +52,15 @@ export function MasteryLegend({ dashboard }: { dashboard: TeacherDashboard }) {
   );
 }
 
-export function MasteryHeatmapTable({ dashboard }: { dashboard: TeacherDashboard }) {
+export function MasteryHeatmapTable({
+  dashboard,
+  onSelectStudent,
+  selectedStudentId
+}: {
+  dashboard: TeacherDashboard;
+  onSelectStudent?: (id: string) => void;
+  selectedStudentId?: string | null;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] border-collapse text-sm">
@@ -80,37 +88,56 @@ export function MasteryHeatmapTable({ dashboard }: { dashboard: TeacherDashboard
           </tr>
         </thead>
         <tbody>
-          {dashboard.students.map((student) => (
-            <tr key={student.id}>
-              <th
-                className="sticky left-0 z-10 border-b border-r border-border bg-elevated p-3 text-left text-sm font-medium text-ink"
-                scope="row"
-              >
-                {student.displayName}
-              </th>
-              {dashboard.subskills.map((subskill) => {
-                const cell = dashboard.cells.find(
-                  (candidate) => candidate.studentId === student.id && candidate.subskillId === subskill.id
-                );
-                if (!cell) {
-                  return <td className="border-b border-r border-border p-2" key={`${student.id}-${subskill.id}`} />;
-                }
-                return (
-                  <td className="border-b border-r border-border p-0" key={`${student.id}-${subskill.id}`}>
-                    <span
-                      className={cn(
-                        "flex min-h-[3rem] w-full items-center justify-center px-2 py-1.5 text-center text-xs font-medium leading-tight",
-                        cellClass[cell.level]
-                      )}
-                      title={cell.evidenceSummary}
+          {dashboard.students.map((student) => {
+            const isSelected = selectedStudentId === student.id;
+            return (
+              <tr key={student.id}>
+                <th
+                  className={cn(
+                    "sticky left-0 z-10 border-b border-r border-border p-3 text-left text-sm font-medium text-ink",
+                    isSelected ? "bg-accent-soft" : "bg-elevated"
+                  )}
+                  scope="row"
+                >
+                  {onSelectStudent ? (
+                    <button
+                      aria-pressed={isSelected}
+                      className="w-full text-left text-accent hover:underline"
+                      onClick={() => onSelectStudent(student.id)}
+                      type="button"
                     >
-                      {MASTERY_LEVEL_LABEL[cell.level]}
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                      {student.displayName}
+                    </button>
+                  ) : (
+                    student.displayName
+                  )}
+                </th>
+                {dashboard.subskills.map((subskill) => {
+                  const cell = dashboard.cells.find(
+                    (candidate) => candidate.studentId === student.id && candidate.subskillId === subskill.id
+                  );
+                  if (!cell) {
+                    return (
+                      <td className="border-b border-r border-border p-2" key={`${student.id}-${subskill.id}`} />
+                    );
+                  }
+                  return (
+                    <td className="border-b border-r border-border p-0" key={`${student.id}-${subskill.id}`}>
+                      <span
+                        className={cn(
+                          "flex min-h-[3rem] w-full items-center justify-center px-2 py-1.5 text-center text-xs font-medium leading-tight",
+                          cellClass[cell.level]
+                        )}
+                        title={cell.evidenceSummary}
+                      >
+                        {MASTERY_LEVEL_LABEL[cell.level]}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

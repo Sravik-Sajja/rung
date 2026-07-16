@@ -25,7 +25,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      {/* Browser extensions (translation tools, etc.) inject attributes/classes onto <body>
+          before React hydrates, causing a benign attribute mismatch. Suppress the warning on this
+          one element — it only tolerates body-level extension noise, not real hydration bugs. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AppShell } from "@/components/app-shell";
-import { Card, Eyebrow, PageHeader, buttonClasses } from "@/components/ui";
+import { StudentShell } from "@/components/student/surface/student-shell";
+import { Card, Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 
 type CompletedDiagnostic = {
@@ -33,22 +33,35 @@ function DiagnosisContent() {
   }, [diagnosticSessionId]);
 
   return (
-    <AppShell active="student">
-      <section className="max-w-2xl">
-        <PageHeader eyebrow="Diagnostic complete" title="Here’s your next useful step" description="This is not a grade. It is the skill that will make your next fraction problems easier." />
-        {!result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Creating your focused practice…"}</p></Card>}
-        {result && <>
-          <div className="space-y-4">
-            <Card className="p-5"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{result.diagnosis.observation}</p><p className="mt-2 text-ink-muted">{result.diagnosis.explanation}</p></Card>
-            <div className="rounded-xl border border-accent bg-accent-soft p-5"><Eyebrow className="mb-2">Next step</Eyebrow><p className="text-ink">{result.diagnosis.nextStep}</p></div>
+    <StudentShell size="wide">
+      <section className="flex flex-1 items-center">
+        <div className="grid w-full gap-10 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-center lg:gap-12 xl:grid-cols-[20rem_minmax(0,1fr)] xl:gap-16 2xl:grid-cols-[24rem_minmax(0,1fr)] 2xl:gap-24">
+          <aside className="animate-rise flex flex-col">
+            <Eyebrow className="mb-2">Check-in complete</Eyebrow>
+            <h1 className="text-balance text-3xl font-extrabold tracking-tight text-ink sm:text-4xl 2xl:text-5xl">
+              Here&rsquo;s your next climb.
+            </h1>
+            <p className="mt-4 text-ink-muted 2xl:text-lg">Not a grade — just the one skill that makes the next fraction problems click.</p>
+          </aside>
+
+          <div className="mx-auto w-full max-w-3xl">
+            {!result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Building your focused practice…"}</p></Card>}
+            {result && (
+              <div className="space-y-4">
+                <Card className="animate-rise p-6"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{result.diagnosis.observation}</p><p className="mt-2 text-ink-muted">{result.diagnosis.explanation}</p></Card>
+                {/* The next step is the payoff of the whole check-in — spark-gold gives it the "here's your
+                    momentum" lift instead of blending into another green panel. */}
+                <div className="animate-rise rounded-xl border border-spark bg-spark-soft p-6"><p className="mb-2 font-mono text-xs font-medium uppercase tracking-wider text-spark-ink">Next step</p><p className="text-ink">{result.diagnosis.nextStep}</p></div>
+                <div className="flex justify-end pt-2"><Link href={`/student/practice/${result.practiceSession.id}`} className={buttonClasses("focus", "lg")}>Start {result.practiceSession.itemCount}-question practice</Link></div>
+              </div>
+            )}
           </div>
-          <div className="mt-8 flex justify-end"><Link href={`/student/practice/${result.practiceSession.id}`} className={buttonClasses("primary", "md")}>Start {result.practiceSession.itemCount}-question practice</Link></div>
-        </>}
+        </div>
       </section>
-    </AppShell>
+    </StudentShell>
   );
 }
 
 export default function DiagnosisPage() {
-  return <Suspense fallback={<AppShell active="student"><section className="max-w-2xl"><p className="text-ink-muted">Loading your diagnosis…</p></section></AppShell>}><DiagnosisContent /></Suspense>;
+  return <Suspense fallback={<StudentShell size="wide"><section className="flex flex-1 flex-col"><p className="text-ink-muted">Loading your diagnosis…</p></section></StudentShell>}><DiagnosisContent /></Suspense>;
 }

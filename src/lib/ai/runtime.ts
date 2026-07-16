@@ -14,7 +14,8 @@ import type {
   SafeItem,
   TutorHint,
 } from "@/lib/ai/contracts";
-import { attemptVerificationFallback, mayaDiagnosisFallback, tutorHintFallbacks } from "@/lib/ai/fixtures";
+import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallback } from "@/lib/ai/fixtures";
+import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
 import { containsGenericTutorLeak } from "@/lib/ai/leakage";
 
 export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "item_wrap";
@@ -185,6 +186,11 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
   return {
     async diagnoseExplanation(input) {
       const supportedTags = new Set(input.supportedMisconceptionTags);
+      const selectedFallbackTag = input.supportedMisconceptionTags.find((tag) => getMayaDiagnosisContent(tag))
+        ?? (supportedTags.has(mayaDiagnosisFallback.misconceptionTag)
+          ? mayaDiagnosisFallback.misconceptionTag
+          : input.supportedMisconceptionTags[0] ?? "unsupported_tag");
+      const selectedFallbackContent = getMayaDiagnosisContent(selectedFallbackTag);
       const result = await resolveStructuredPayload({
         feature: "diagnosis_explanation",
         promptVersion: input.promptVersion,
@@ -209,12 +215,10 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
           }
         },
         fallback: () => ({
-          misconceptionTag: supportedTags.has(mayaDiagnosisFallback.misconceptionTag)
-            ? mayaDiagnosisFallback.misconceptionTag
-            : input.supportedMisconceptionTags[0] ?? "unsupported_tag",
-          observation: mayaDiagnosisFallback.observation,
-          explanation: mayaDiagnosisFallback.explanation,
-          nextStep: mayaDiagnosisFallback.nextStep,
+          misconceptionTag: selectedFallbackTag,
+          observation: selectedFallbackContent?.observation ?? mayaDiagnosisFallback.observation,
+          explanation: selectedFallbackContent?.explanation ?? mayaDiagnosisFallback.explanation,
+          nextStep: selectedFallbackContent?.nextStep ?? mayaDiagnosisFallback.nextStep,
         }),
       });
 
@@ -245,7 +249,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
             throw new Error("Tutor hint contained a direct-answer signal.");
           }
         },
-        fallback: () => ({ hint: tutorHintFallbacks[input.level].hint }),
+        fallback: () => ({ hint: getTutorHintFallback(input.item.id, input.level).hint }),
       });
 
       return {

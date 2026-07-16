@@ -48,7 +48,7 @@ export default {
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)"
       },
-      maxWidth: { content: "64rem" }
+      maxWidth: { content: "64rem", wide: "100rem" }
     }
   },
   plugins: []
