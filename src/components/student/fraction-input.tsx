@@ -74,9 +74,11 @@ export function FractionInput({
   }
 
   const fieldClasses = cn(
-    "rounded-md border border-border bg-surface-2 px-3 py-2 text-center text-xl font-bold text-ink",
+    // bg-surface (near-white in light) keeps the answer wells neutral on the elevated card —
+    // surface-2 reads too green against white since the light palette went sage.
+    "rounded-md border border-border bg-surface px-3 py-2 text-center text-xl font-bold text-ink",
     "placeholder:font-normal placeholder:text-ink-faint",
-    "disabled:bg-surface disabled:text-ink-faint",
+    "disabled:bg-transparent disabled:text-ink-faint",
   );
 
   return (

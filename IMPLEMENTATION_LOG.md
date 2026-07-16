@@ -351,6 +351,7 @@ Use this template for every meaningful change:
 - `npm.cmd test`: 11 test files / 52 tests passed, including 7 work-help-route tests and 12 AI-runtime tests.
 - `npx.cmd tsc --noEmit`: passed.
 - `git diff --check`: passed.
+- Browser smoke test: a fresh five-question diagnostic selected common-denominator practice; the work-help card was absent after the first miss and after selecting a hint, appeared only after the next miss, and rendered the safe fallback response after typed work was submitted.
 - Live provider validation is still pending an environment with `OPENAI_API_KEY`; the live/cache/fallback behavior is covered through the injected client tests.
 
 ### Bugs / follow-ups
