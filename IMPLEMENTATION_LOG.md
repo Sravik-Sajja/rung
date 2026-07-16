@@ -382,4 +382,23 @@ Use this template for every meaningful change:
 - Generated plans currently replace only the local demo-session plan. Extend the persisted Supabase practice-session creation path to save generated validated items before relying on this behavior after deployment.
 - Live hint generation still requires `OPENAI_API_KEY` (and optionally `OPENAI_MODEL_TUTOR_HINT`) in `.env.local`; without it, the same route intentionally returns reviewed item-specific fallback hints.
 - **Number-line presentation:** current prompts name the target fraction directly (for example, “Which point is 3/4…”), which makes the task feel more like identifying a label than locating a point.
-- Make differences in nudge, hint, and guided step more obvious in prompt
+
+## 2026-07-16 — selectable practice-plan hub and clearer tutor levels
+
+### Completed
+
+- Turned the diagnosis result into a reusable plan hub: after completing one skill-specific practice session, the learner returns to the plan list, completed sessions remain marked while the local app server is running, and remaining plans can be started independently.
+- Kept diagnostic completion stable in local demo state so returning to the hub reuses its original generated plan sessions instead of creating duplicate sessions.
+- Tightened the tutor model instruction so `nudge`, `hint`, and `guided_step` are distinct forms of help: reflective refocus question, strategy insight without a procedure, and one concrete next action respectively.
+- Updated `architecture.md` and `contracts.md` to document separate selectable skill plans, typed whole-plan validation/fallback, generated-item hint session lookup, and common-multiple denominator scoring.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- Focused diagnostic-completion, demo-learning-store, and AI-runtime tests: passed.
+- `git diff --check`: passed.
+
+### Bugs / follow-ups
+
+- Practice-plan completion and selection are still process-local demo state; persist plan metadata and generated validated items in Supabase before deployment.
+- Number-line practice remains text-only. A future visual representation should be designed and tested separately rather than relying on a partial client-side fallback.

@@ -333,7 +333,15 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         runStore,
         request: {
           schemaName: "tutor_hint",
-          system: `You are a safe middle-school math tutor. Return one ${input.level} hint. Do not state a final answer, do not give a worked solution, and do not claim whether the learner is correct.`,
+          system: `You are a safe middle-school math tutor. Return exactly one ${input.level} support message; never combine levels.
+
+          Nudge: one reflective question, maximum 18 words. Redirect attention to information already visible in the problem. Do not name a strategy, rule, tool, or procedure.
+
+          Hint: one declarative insight, maximum 24 words. Explicitly name the relevant strategy, representation, or rule, but do not tell the learner what to do first, second, or next.
+
+          Guided step: exactly one imperative action, maximum 24 words. Tell the learner one concrete thing to write, draw, identify, or calculate now. Never include a second action, a completed calculation, or the final answer.
+
+          Do not state a final answer, give a worked solution, or claim whether the learner is correct.`,
           user: JSON.stringify({ item: input.item, learnerAttempt: input.attempt, level: input.level }),
         },
         validate: (payload) => {

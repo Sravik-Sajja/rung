@@ -255,6 +255,7 @@ For the main demo student, the selected diagnosis must be stable: **finds no com
 2. Request a structured 3–4 item plan for each skill. The model may choose only a supported kind: `number_line`, `equivalent_fraction`, `common_denominator`, or `fraction_operation` (addition/subtraction with unlike denominators).
 3. Deterministically construct and validate every prompt and answer rule from the returned parameters. Reject the entire plan if any item is malformed, has the wrong kind for its skill, or fails its math constraint.
 4. A rejected plan falls back as a whole to that skill's validated fallback plan; other skill plans from the same diagnostic remain unaffected.
+5. The diagnosis result is the practice-plan hub. Completing one plan returns the learner to that hub, where completed plans stay visibly complete and remaining plans stay selectable for the lifetime of the local demo session.
 
 ### 8.1 Item generation pipeline
 
@@ -401,7 +402,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 
 - `/demo` — non-production, environment-gated selector for allow-listed fictional demo identities only.
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
-- `/student/diagnosis` — exact gap, evidence-oriented plain language, “start practice.”
+- `/student/diagnosis` — evidence-oriented plain language and a practice-plan hub: one selectable card per missed skill, with completed cards retained as completed when the learner returns from another plan.
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
 - `/student/mastery` — narrow, plain-language skill status; sub-skills still below `mastered` are flagged “will come back” (the within-session resurfacing loop, §8); no misleading grade-level label.
 

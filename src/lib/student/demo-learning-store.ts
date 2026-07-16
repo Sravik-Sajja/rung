@@ -7,7 +7,8 @@ import { createDemoSessionId, getDemoSession, resetDemoSessionState, setDemoSess
 import type { Item, MasteryLevel } from "@/lib/types";
 import type { GeneratedPracticePlan } from "@/lib/ai/contracts";
 
-type DiagnosticRun = { id: string; studentId: string; assignmentId: string; answers: Map<string, { answer: string; isCorrect: boolean; usedHint: boolean }> };
+type DiagnosticCompletion = { diagnosis: { selectedSubskillId: string; misconceptionTag: string; evidence: ReturnType<typeof collectDiagnosticEvidence>; practicePlanTargets: Array<{ subskillId: string; misconceptionTag: string }>; observation: string; explanation: string; nextStep: string; explanationSource: "fallback" }; practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number }; practicePlans?: Array<{ id: string; title: string; reason: string; itemCount: number }> };
+type DiagnosticRun = { id: string; studentId: string; assignmentId: string; answers: Map<string, { answer: string; isCorrect: boolean; usedHint: boolean }>; completion?: DiagnosticCompletion };
 type PracticePlan = { subskillId: string; title: string; reason: string };
 type PracticeOccurrence = { id: string; item: Item; position: number; status: "pending" | "missed" | "requeued" | "correct"; plan?: PracticePlan };
 type PracticeRun = { id: string; studentId: string; topicId: string; items: PracticeOccurrence[]; mastery: Map<string, { level: MasteryLevel; evidenceCount: number }> };
@@ -58,6 +59,7 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
   const run = getDemoSession<DiagnosticRun>("diagnostic", input.diagnosticSessionId);
   const items = diagnosticItems();
   if (!run || run.studentId !== input.studentId || run.answers.size !== items.length) return null;
+  if (run.completion) return run.completion;
   const evidence = collectDiagnosticEvidence(items, run.answers);
   const practicePlanTargets = [...new Map(evidence.filter((entry) => !entry.isCorrect).map((entry) => [entry.subskillId, entry])).values()]
     .map((entry) => ({ subskillId: entry.subskillId, misconceptionTag: entry.misconceptionTag ?? "needs-practice" }));
@@ -91,7 +93,7 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
     mastery: new Map(),
   };
   setDemoSession("practice", practice.id, practice);
-  return {
+  const completion: DiagnosticCompletion = {
     diagnosis: {
       selectedSubskillId: gap.subskillId,
       misconceptionTag: gap.misconceptionTag ?? "no_recognized_distractor",
@@ -104,6 +106,8 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
     },
     practiceSession: { id: practice.id, status: "active" as const, firstItemId: practice.items[0]?.item.id ?? null, itemCount: practice.items.length },
   };
+  run.completion = completion;
+  return completion;
 }
 
 export function getDemoPractice(sessionId: string, studentId: string) {

@@ -40,7 +40,7 @@ function RungMotif({ side }: { side: "left" | "right" }) {
   );
 }
 
-export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
+export function PersistedPracticeLoop({ sessionId, returnTo }: { sessionId: string; returnTo?: string }) {
   const [practice, setPractice] = useState<Practice | null>(null);
   const [nextPractice, setNextPractice] = useState<Practice | null>(null);
   const [lastCorrect, setLastCorrect] = useState(false);
@@ -230,8 +230,8 @@ export function PersistedPracticeLoop({ sessionId }: { sessionId: string }) {
                     Check
                   </button>
                 ) : sessionWillComplete ? (
-                  <Link href="/student/mastery" className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
-                    See my progress
+                  <Link href={returnTo ?? "/student/mastery"} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+                    {returnTo ? "Back to practice plans" : "See my progress"}
                   </Link>
                 ) : (
                   <button type="button" onClick={nextQuestion} className={buttonClasses("focus", "lg", "animate-pop w-full sm:w-72")}>

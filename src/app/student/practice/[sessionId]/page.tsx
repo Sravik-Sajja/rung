@@ -1,6 +1,7 @@
 import { PersistedPracticeLoop } from "@/components/student/persisted-practice-loop";
 
-export default async function PracticePage({ params }: { params: Promise<{ sessionId: string }> }) {
+export default async function PracticePage({ params, searchParams }: { params: Promise<{ sessionId: string }>; searchParams: Promise<{ returnTo?: string }> }) {
   const { sessionId } = await params;
-  return <PersistedPracticeLoop sessionId={sessionId} />;
+  const { returnTo } = await searchParams;
+  return <PersistedPracticeLoop sessionId={sessionId} returnTo={returnTo} />;
 }

@@ -19,6 +19,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ass
     if (!completed) {
       return NextResponse.json({ error: "Complete every diagnostic item before continuing" }, { status: 400 });
     }
+    if ("practicePlans" in completed && completed.practicePlans?.length) return NextResponse.json(completed);
 
     const supportedTags = completed.diagnosis.evidence.flatMap((entry) => entry.misconceptionTag ? [entry.misconceptionTag] : []);
     if (supportedTags.length) {
@@ -67,7 +68,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ ass
       completed.practiceSession.itemCount = practicePlans[0].itemCount;
     }
 
-    return NextResponse.json({ ...completed, practicePlans });
+    const enriched = completed as typeof completed & { practicePlans?: typeof practicePlans };
+    enriched.practicePlans = practicePlans;
+    return NextResponse.json(enriched);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not complete diagnostic" }, { status: 400 });
   }
