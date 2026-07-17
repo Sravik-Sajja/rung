@@ -104,7 +104,7 @@ export function DashboardView({
                 </h2>
                 <p className="mt-1 text-sm text-ink-muted">
                   One row per student, one column per subskill. Each cell pairs a mastery color with a text label,
-                  and hovering a cell shows the stored evidence behind it. Select a student row to open their
+                  and hovering eligible cells shows quick actions. Select a student row to open their
                   detail.
                 </p>
               </div>

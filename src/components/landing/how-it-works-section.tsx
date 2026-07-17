@@ -7,33 +7,33 @@ import { StepVignette } from "./step-vignettes";
 const studentLoop: Array<{ n: string; title: string; body: string }> = [
   {
     n: "01",
-    title: "Diagnostic",
-    body: "One graded assignment becomes a short adaptive diagnostic: a handful of questions calibrated to find exactly where understanding breaks down, not just whether the final answer was right."
+    title: "Join and check in",
+    body: "A student joins a teacher workspace with a code, then completes a short check-in that captures answer evidence without treating it like a grade."
   },
   {
     n: "02",
-    title: "Sub-skill diagnosis",
-    body: "Not “needs help with fractions.” Rung names the specific sub-skill (common denominators when adding mixed numbers) so practice can start on the actual gap."
+    title: "Specific skills",
+    body: "Rung records evidence by sub-skill, so a teacher can see the exact concept that needs attention instead of one vague subject-wide label."
   },
   {
     n: "03",
     title: "Targeted practice",
-    body: "A problem set built around that one sub-skill, sized to close the gap, not a generic review packet covering everything the student already knows."
+    body: "Students choose a focused practice plan for each assessed skill that is not yet mastered. Missed skills appear first, with new problems generated safely for that skill."
   },
   {
     n: "04",
     title: "AI tutor hint ladder",
-    body: "Stuck on a problem? Hints escalate (a nudge, a worked step, a full explanation), always short of the answer, so the student still does the reasoning."
+    body: "Stuck on a problem? Support progresses from a reflective nudge, to a strategy hint, to one guided step—without giving the answer or a completed solution."
   },
   {
     n: "05",
-    title: "Attempt-gated peer example",
-    body: "A real classmate’s annotated solution unlocks only after genuine attempts, so it’s studied as a worked model instead of copied as a shortcut."
+    title: "Evidence updates",
+    body: "Answers are scored deterministically. Diagnostic and practice evidence update the student&rsquo;s class-specific mastery cells as they work."
   },
   {
     n: "06",
-    title: "Mastery",
-    body: "The student clears the sub-skill with evidence from their own work, not a self-report, and moves on to the next rung."
+    title: "Teacher action",
+    body: "The teacher sees the heatmap, grouped shared needs, an AI-assisted mini-lesson, and quick actions for follow-up practice or reminders."
   }
 ];
 
@@ -45,11 +45,11 @@ export function HowItWorksSection() {
       <div className="lg:mx-auto lg:max-w-2xl lg:text-center">
         <Eyebrow>How it works</Eyebrow>
         <h2 className="mt-2 text-2xl font-bold tracking-tight text-ink">
-          The student loop, one rung at a time
+          From check-in to next step
         </h2>
         <p className="mt-3 max-w-2xl text-ink-muted lg:mx-auto">
-          Six ordered steps carry a student from a graded assignment to demonstrated mastery of
-          the one skill they were actually missing.
+          Six connected steps carry a student&rsquo;s evidence from a short check-in to a teacher&rsquo;s
+          clear next move.
         </p>
       </div>
 

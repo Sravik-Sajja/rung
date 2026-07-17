@@ -79,10 +79,10 @@ export default function HomePage() {
                   Meet every student on the rung they&rsquo;re actually on.
                 </h1>
                 <p className="mt-5 max-w-2xl text-lg text-ink-muted">
-                  One assignment becomes a per-student diagnostic. Each student gets targeted practice on
-                  the exact sub-skill they&rsquo;re missing, with an AI tutor and a peer example that
-                  unlocks only after a real attempt. Teachers get tomorrow&rsquo;s small-group plan by
-                  tonight.
+                  Teachers create a workspace and share a join code. Students take a short
+                  check-in, choose focused practice for skills that are not yet mastered, and get safe
+                  AI support when they are stuck. Their stored evidence becomes a teacher&rsquo;s next
+                  small-group move.
                 </p>
               </div>
 
@@ -149,9 +149,9 @@ export default function HomePage() {
               From heatmap to tomorrow&rsquo;s plan
             </h2>
             <p className="mt-3 max-w-2xl text-ink-muted lg:mx-auto">
-              Every diagnostic rolls up into a class-wide mastery heatmap. Rung clusters students by
-              shared gaps automatically and hands you a ready small-group plan for tomorrow morning,
-              not another dashboard to interpret at 11pm.
+              Share one join code, then watch check-in and practice evidence appear in your class
+              heatmap. Rung groups shared gaps and gives you a concise AI-assisted mini-lesson, plus
+              quick follow-up actions from the cells that need attention.
             </p>
           </div>
 
@@ -171,12 +171,12 @@ export default function HomePage() {
 
             <Card className="!bg-elevated flex-1 p-5">
               <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink-muted">
-                Auto-grouped students
+                Shared next steps
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                <Badge tone="support">4 · common denominators</Badge>
-                <Badge tone="developing">6 · mixed numbers</Badge>
-                <Badge tone="mastered">3 · ready to extend</Badge>
+                <Badge tone="support">4 · shared skill gap</Badge>
+                <Badge tone="developing">3 · follow-up practice</Badge>
+                <Badge tone="mastered">2 · mastered</Badge>
               </div>
             </Card>
 
@@ -186,26 +186,26 @@ export default function HomePage() {
 
             <Card className="!bg-elevated flex-1 p-5">
               <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink-muted">
-                Tomorrow&rsquo;s 15-minute plan
+                Act on evidence
               </p>
               <ul className="mt-3 space-y-1.5 text-sm text-ink">
                 <li className="flex items-start gap-2">
                   <span aria-hidden className="mt-0.5 text-accent">
                     &#10003;
                   </span>
-                  Pull the common-denominator group first
+                  Open a mini-lesson for a shared gap
                 </li>
                 <li className="flex items-start gap-2">
                   <span aria-hidden className="mt-0.5 text-accent">
                     &#10003;
                   </span>
-                  Mini-lesson on mixed numbers
+                  Assign a three-question follow-up
                 </li>
                 <li className="flex items-start gap-2">
                   <span aria-hidden className="mt-0.5 text-accent">
                     &#10003;
                   </span>
-                  Extension set for students ready to move on
+                  Remind students who have not started
                 </li>
               </ul>
             </Card>
@@ -226,8 +226,8 @@ export default function HomePage() {
               Meet your students where they are.
             </h2>
             <p className="mt-4 text-lg text-ink-muted">
-              Practice, not a test: try the student loop yourself, or open the class view
-              teachers check before tomorrow&rsquo;s lesson.
+              Try the student check-in, create a workspace for your own class, or explore the sample
+              class view.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-3">
               <Link href="/demo" className={buttonClasses("primary", "lg", "shadow-md hover:shadow-lg")}>

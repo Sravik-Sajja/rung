@@ -72,15 +72,11 @@ function DiagnosisContent() {
                 ? result.practicePlans
                 : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }];
               const hasMultiplePlans = practicePlans.length > 1;
-              const observation = hasMultiplePlans
-                ? "Your answers show that these skills are the next useful steps."
-                : "Your answers show that this skill is the next useful step.";
               const nextStep = hasMultiplePlans
                 ? "Start the focused practice sets."
                 : "Start the focused practice set.";
 
               return <div className="space-y-4">
-                <Card className="animate-rise p-6"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{observation}</p></Card>
                 {/* The next step is the payoff of the whole check-in — a gold margin annotation gives it
                     the "here's your momentum" lift instead of blending into another green panel. */}
                 <div className="animate-rise border-l-2 border-spark pl-4"><p className="text-sm font-semibold text-spark-ink">Next step</p><p className="mt-1 text-lg text-ink">{nextStep}</p></div>
