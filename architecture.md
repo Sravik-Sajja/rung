@@ -135,9 +135,15 @@ All mutation and model workflows cross this boundary. Browser code must not deci
 
 Supabase is the canonical store for curriculum, users, scored responses, mastery, groups, safe cached model outputs, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
 
-**Seeded curriculum is cached in-process; learner state never is.** Items, sub-skills, assignments, and `assignment_items` change only when the seed runs, but they are read on every submitted answer and every hint request. Re-reading them was free against a process-local demo store and is not free against Postgres, so those reads go through a short-lived process-local cache (`withCurriculumCache`) that coalesces concurrent misses into one query and never caches a failed read. The boundary is strict: mastery, responses, sessions, and support state are excluded, because the teacher heatmap's credibility depends on a participant's evidence appearing immediately (§9.4). Entries expire on a TTL because `npm run seed` runs out of process and cannot invalidate a cache inside a running server; `RUNG_CURRICULUM_CACHE_SECONDS=0` disables caching outright while seed content is being edited.
+**Seeded curriculum is cached in-process; learner state never is.** Sub-skills, assignments, `assignment_items`, and every seeded item change only when the seed runs, but they are read on every submitted answer and every hint request. Re-reading them was free against a process-local demo store and is not free against Postgres, so those reads go through a short-lived process-local cache (`withCurriculumCache`) that coalesces concurrent misses into one query and never caches a failed read. The boundary is strict: mastery, responses, sessions, and support state are excluded, because the teacher heatmap's credibility depends on a participant's evidence appearing immediately (§9.4). Entries expire on a TTL because `npm run seed` runs out of process and cannot invalidate a cache inside a running server; `RUNG_CURRICULUM_CACHE_SECONDS=0` disables caching outright while seed content is being edited. `RUNG_CURRICULUM_CACHE_MAX_ENTRIES` bounds the map (default 500) so a long-running server stays bounded: runtime-generated items mint a new key per learner, unlike the seeded curriculum, whose key count is fixed.
 
-Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` fails closed in production. In non-production, a temporary participant is created server-side, enrolled in the demo class with a `not_started` mastery matrix, and resolved only through its opaque httpOnly cookie. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
+Not every row in `items` is seeded, so "seeded curriculum" is the boundary rather than "the `items` table". Generated practice items, and since the per-session diagnostic (§8.1) every diagnostic item, are minted at runtime and belong to one learner's one session. They are cacheable for the same reason seeded rows are — a materialized session's items never change — but they are keyed by session, never by assignment: an assignment-keyed entry would hand one learner another learner's questions and answer key. The one state that is deliberately never cached is a session that has not been materialized yet, because unlike everything else here that empty is not immutable; it becomes five items moments later, and pinning it for a TTL would send a resuming learner to different questions than the scorer is using.
+
+Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` fails closed in production. In non-production, a temporary participant is created server-side, enrolled in the isolated `fractions-walkthrough-class` with a `not_started` mastery matrix, and resolved only through its opaque httpOnly cookie. The walkthrough class is deliberately not the seeded demo class: anonymous walkthrough work must never surface on a teacher's heatmap, and that separation is structural rather than a filter (`011_isolate_public_walkthrough.sql`).
+
+A learner may also hold a second, independent session: the one minted when they join a teacher workspace by code. `teacher_demo_sessions` and `teacher_demo_student_sessions` both enable RLS with **no policies at all** — deny-by-default for `authenticated`, exactly as `items` and `diagnostic_session_items` are — so every read and write goes through service-role `security definer` RPCs and none of it is reachable from a browser session. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
+
+Because a browser can hold both cookies for the same student at once, `src/lib/auth/learner-session.ts` is the single point that reconciles them; every "who is this?" and "sign out" path resolves or revokes through it rather than reading one cookie directly.
 
 ### AI integration: OpenAI service adapter
 
@@ -170,7 +176,7 @@ On timeout, API failure, invalid schema, or unsafe output, a feature uses only a
 
 **Cache keys cover exactly the inputs the model receives, and nothing else.** A key contains `feature`, `prompt_version`, and the safe request payload. Identity is deliberately excluded from the tutor and diagnosis keys: a hint is a function of the item, attempt, and level, and an explanation is a function of the deterministic evidence, so keying on `student_id` would fragment the cache one entry per learner and guarantee that a class making the same mistake never reuses anything. Two learners sharing an entry is the intended behaviour, not a leak — the payload never contained learner-identifying content. What must never be shared is a cache entry created for a different item, sub-skill, prompt version, or *request*. Work analysis is the deliberate exception: it keys on one-way hashes of the typed work and optional image, never their raw values (§9.3), and stays live-first so one learner's coaching is never served to another.
 
-`ai_runs` is both the audit log and the cache — a row with `status = 'valid'` is the cache entry — so the lookup on `(feature, input_hash, prompt_version)` is indexed, partially on that status. Without the index the cache read is a sequential scan over a log that gains a row on every adapter call, and it degrades exactly as the demo is used.
+`ai_runs` is both the audit log and the cache — a row with `status = 'valid'` is the cache entry — so the lookup on `(feature, input_hash, prompt_version)` is indexed, partially on that status. Without the index the cache read is a sequential scan over a log that gains a row on every adapter call, and it degrades exactly as the demo is used. The index is partial because `valid` is the only status the cache reads, which keeps it small: the `live_failed`, `cache_hit`, and `fallback` rows that make up most of the table's volume never enter it. A second index on `(feature, created_at desc)` serves audit reads — "what happened, most recent first" — without forcing them through the cache index's leading columns.
 
 ## 7. Domain model
 
@@ -195,15 +201,18 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | --- | --- | --- |
 | `students` | Seeded learner identities | `id`, `display_name`, `grade_band`, `is_demo_default` |
 | `profiles` | Application identity linked to Supabase Auth | `id` (= `auth.users.id`), `role`, `student_id?`, `teacher_id?`, `demo_identity` |
-| `classes` | Seeded demo classroom | `id`, `name`, `teacher_display_name` |
+| `teachers` | Class owner; runtime-written by `create_teacher_demo_workspace`, not seed-only | `id`, `display_name` |
+| `classes` | Three kinds: the seeded demo classroom, the isolated public walkthrough class, and runtime-created temporary teacher workspaces | `id`, `name`, `teacher_display_name`, `teacher_id` |
 | `class_enrollments` | Student/class membership | `class_id`, `student_id` |
 | `topics` | Top-level instructional unit | `id`, `slug`, `name` |
 | `subskills` | Fine-grained skills | `id`, `topic_id`, `slug`, `name`, `description`, `prerequisite_subskill_id` |
-| `items` | Validated diagnostic/practice questions | `id`, `subskill_id`, `item_type`, `prompt`, `answer_spec`, `visual_spec`, `solution_steps`, `difficulty`, `is_active`, `distractor_map` |
+| `items` | Validated diagnostic/practice questions, seeded and generated alike; generated rows carry `is_active = false` | `id`, `subskill_id`, `item_type`, `prompt`, `answer_spec`, `visual_spec`, `solution_steps`, `difficulty`, `is_active`, `distractor_map` |
 | `assignments` | Teacher-assigned diagnostic | `id`, `class_id`, `topic_id`, `title`, `mode` |
-| `assignment_items` | Stable diagnostic order | `assignment_id`, `item_id`, `position` |
+| `assignment_items` | The assignment's canonical slots; the seeded five a session is generated against, not necessarily what any learner saw | `assignment_id`, `item_id`, `position` |
+| `diagnostic_session_items` | One learner's own five diagnostic items for one session | `diagnostic_session_id`, `item_id`, `position`, `slot_id` |
 | `student_responses` | Every submitted diagnostic/practice answer | `id`, `student_id`, `item_id`, `answer_raw`, `is_correct`, `context`, `diagnostic_session_id`, `practice_session_id`, `practice_session_item_id`, `submitted_at` |
-| `mastery` | Latest mastery status per student/class/sub-skill | `student_id`, `class_id`, `subskill_id`, `level`, `evidence_count`, `last_evaluated_at` |
+| `mastery` | Latest mastery status per student/class/sub-skill | `student_id`, `class_id`, `subskill_id`, `level`, `evidence_count`, `evidence_summary`, `last_evaluated_at` |
+| `class_mastery_heatmap` (view) | The heatmap's only read of mastery | Reads `mastery` by its own `class_id` and joins `class_enrollments` on both `student_id` and `class_id`, so a learner who is not enrolled in a class can never appear on its roster |
 | `practice_sessions` | Generated/selected practice sequence | `id`, `student_id`, `topic_id`, `status`, `diagnosis_snapshot`, `diagnostic_session_id`, `completed_at` |
 | `practice_session_items` | Ordered selected practice items | `practice_session_id`, `item_id`, `position`, `status` |
 | `diagnostic_completions` | Stable deterministic/AI-safe completion result | `diagnostic_session_id`, `selected_subskill_id`, `misconception_tag`, `evidence`, `explanation_source`, `completion_version` |
@@ -212,6 +221,8 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `practice_support_events` | Server-recorded support sequence metadata | occurrence/session IDs, `event_kind`, timestamp; never raw work or photos |
 | `practice_support_state` | Derived support/claim state per logical item | session, item, learner, miss/hint/correct/claim timestamps; never raw work or photos |
 | `demo_participant_sessions` | Non-production temporary learner session | `student_id`, `class_id`, one-way token hash, expiry/revocation timestamps |
+| `teacher_demo_sessions` | Non-production temporary teacher workspace and its join code | `id`, `teacher_id`, `class_id`, `assignment_id`, one-way `token_hash`, `join_code`, expiry/revocation timestamps |
+| `teacher_demo_student_sessions` | Non-production joined-learner session for one workspace; revoked with its parent | `id`, `teacher_demo_session_id`, `student_id`, `class_id`, `assignment_id`, one-way `token_hash`, expiry/revocation timestamps |
 | `attempt_submissions` | **Legacy compatibility only:** former peer-gate attempt records; not used by the current work-help flow | `id`, `student_id`, `item_id`, `attempt_text`, `verification_status`, `verification_reason` |
 | `peer_solutions` | **Legacy compatibility only:** former curated worked examples; not rendered in the current student flow | `id`, `item_id`, `author_alias`, `approach_text`, `full_solution`, `is_vetted` |
 | `peer_unlocks` | **Legacy compatibility only:** former peer-gate state; not read by the current student flow | `student_id`, `item_id`, `approach_unlocked_at`, `full_solution_unlocked_at` |
@@ -296,6 +307,13 @@ Questions are **generated, not hard-coded** — but the model is limited to a ty
 4. **Generate and cache for the demo.** The practice-plan adapter may generate operands live for a newly created learner session. Cache each validated plan by learner, selected gap, and prompt version. If the model is unavailable or validation fails, the demo uses the frozen validated bank immediately (§6 cache policy).
 
 The number picker must be seedable/deterministic (no `Math.random()` in a way that breaks reproducibility) so a fresh seed reproduces the same demo items (§18).
+
+**The diagnostic is generated per session, not per assignment.** Every diagnostic session owns five `items` rows of its own, listed in `diagnostic_session_items` and minted at session start from the seeded form bank in `src/lib/items/diagnostic-items.ts`. Two properties are load-bearing:
+
+- **Slots are stable; item ids are not.** The five canonical ids in `assignment_items` are *slots* — one per sub-skill, in fixed order. They are what the heatmap columns, `selectDiagnosticGap`, and the seeded assignment key off, and they never move. The session's items carry their own ids (`<slot>--<session>`) because they are real rows in `items`, and a shared id would mean one learner's numbers overwriting another's.
+- **The items are written down, never re-derived on read.** Teacher evidence joins `student_responses.item_id -> items` (§13), so an item that existed only in a server's memory would leave the teacher reading the seeded row: same slot name, different numbers, no error. Persisting the generated item is what keeps the learner's question, the scorer's answer key, and the teacher's evidence view the same object.
+
+Because the seed is per session, the same learner sitting the check-in in a second class draws a fresh five rather than the identical questions. Materialization is idempotent under the session's own lock, so a retried or concurrent start never reshuffles a check-in already in progress, and a session that already holds responses is never re-materialized — that would swap the questions out from under recorded work. Generated items are inserted `is_active = false` for the same reason generated practice items are: no static selection query may hand one learner another learner's item. They are purged with their session: the session delete cascades their `diagnostic_session_items` link but not the `items` rows themselves, so every path that removes a session — the seed reset and `remove_teacher_demo_workspace_student` — collects the item ids first and deletes them explicitly.
 
 **Re-wrap invariant.** If the LLM wording step is implemented, it may change only the learner-facing prompt. It must preserve the parametric item's ID, operands, computed answer, `answer_spec`, `distractor_map`, sub-skill, difficulty, and solution steps. Re-freezing updates the existing item record/cache key rather than creating a new ID.
 
@@ -423,8 +441,15 @@ Exact routing may evolve, but server operations must have these contracts.
 | `POST /api/work-help` | authenticated student, owned `practiceSessionId` + `practiceSessionItemId`, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
+| `POST /api/teacher-workspace/session` | non-production `{ teacherDisplayName, className }` | new workspace (class, assignment, join code); sets the opaque owner cookie. Token and expiry are stripped from the body |
+| `GET /api/teacher-workspace/session` | non-production owner cookie | the workspace and its live roster/heatmap; `404` with no cookie, `401` expired or invalid |
+| `DELETE /api/teacher-workspace/session` | non-production owner cookie | ends the workspace and revokes every joined-student session under it |
+| `GET /api/teacher-workspace/join-preview?joinCode=` | non-production | the class/teacher/assignment names for a confirm screen, plus who the visitor is signed in as. An unknown code is `200` with a null workspace, not `404` |
+| `POST /api/teacher-workspace/student-session` | non-production `{ joinCode }`, plus `displayName` only when no participant cookie is present | joins the class and sets the opaque joined-learner cookie. The branch is chosen from the server-resolved participant cookie, never from the body |
+| `GET`/`DELETE /api/teacher-workspace/student-session` | non-production joined-learner cookie | the joined student, or sign-out |
+| `DELETE /api/teacher-workspace/students/:studentId` | non-production owner cookie | removes that learner from the owner's class. The class comes from the cookie, never the URL |
 
-All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and always disabled in production. In non-production it resolves only a server-created temporary participant bound by an opaque, httpOnly cookie.
+All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and always disabled in production. In non-production it resolves a server-created temporary participant, a joined workspace learner, or both, each bound by its own opaque httpOnly cookie; a client-supplied ID never selects an identity on any path.
 
 ### 11.1 Shared API contract
 
@@ -440,10 +465,13 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
 - `/student/mastery` — narrow, plain-language skill status; sub-skills still below `mastered` are flagged “will come back” (the within-session resurfacing loop, §8); no misleading grade-level label.
 
+- `/join-class` — enter a join code, or land on `?joinCode=` from a shared link and confirm against a preview of the class before joining. A first-class entry point: a learner may arrive here before ever seeing `/demo`.
+
 ### Teacher routes
 
 - `/teacher/dashboard` — selected class, skill-by-student heatmap, concise legend, groups.
 - `/teacher/groups/[groupId]` — group members, shared gap, mini-lesson, practice recommendation, vetted video.
+- `/teacher-workspace` — non-production only. Without an owner cookie it renders the setup form; with one it renders the workspace: join code and shareable link, the live roster, and per-student removal. The roster starts empty and only ever shows learners who actually joined.
 
 Do not build an elaborate navigation system. A visible “Switch to teacher view” control at the end of student practice supports the demo flow. The teacher group route displays a loading skeleton immediately while its server lesson draft is prepared.
 
@@ -477,11 +505,16 @@ The demo dataset is a product asset, not placeholder data.
 
 It must include:
 
-- One class with 8–12 named-but-fictional students.
-- A cookie-bound temporary participant as the only active learner path; the seeded roster remains teacher-only fictional data.
+- One seeded class with 8–12 named-but-fictional students. This is the seeded tenant, not the only class: a teacher workspace mints a new class, assignment, and join code at runtime, and its roster starts empty and only ever contains learners who actually joined.
+- Two active learner paths, both server-created and cookie-bound: the walkthrough participant, and a learner who joins a teacher workspace with a join code. The seeded roster remains teacher-only fictional data and is never an active learner on either path.
 - At least three students with the common-denominator gap, so the teacher group is convincing.
 - At least one student in each visible mastery state to make the heatmap legible.
-- Exactly five fixed, ordered diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
+
+The three requirements above describe the **seeded demo class only**. A teacher demo workspace deliberately ships no fictional roster: it starts with an empty heatmap that fills only as real learners join (`016_workspace_without_fictional_roster.sql`), because real joiners previously shared a roster with invented work.
+
+The seeded roster's mastery is written directly as levels (`masteryLevelsByStudent` in `supabase/seed.ts`); the seed inserts no `student_responses` at all. So the fictional students have mastery without evidence behind it, and only a real learner's cells carry a real response trail. Any requirement phrased as "seeded responses must select distractor X" is obsolete — there are no seeded responses to select anything.
+
+- Exactly five ordered diagnostic **slots**, one per sub-skill, that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. The slot ids are fixed and seeded; the question filling each slot is generated per session (§8.1), so "five fixed items" describes the assignment's shape, not what any learner is asked. The seeded five must remain regardless: the workspace RPCs `raise exception` without them.
 - At least four frozen, validated practice items for each possible demonstrated target skill.
 - One video per featured sub-skill with provider, title, URL, and verification note.
 - One 15–20 minute plan for the common-denominator teacher group.
@@ -580,7 +613,7 @@ The hard rule is that Tracks A, B, and C do not start until Phase-0 contracts an
 
 The MVP is ready when all statements below are true:
 
-- A fresh database seed produces the same credible demo class and prepared Maya fallback journey.
+- A fresh database seed produces the same credible demo class, including the seeded Maya/Diego/Zara common-denominator cohort. (The public walkthrough has no seeded-student fallback journey; a visitor always starts as a new temporary learner — see Section 4, Beat 1.)
 - A temporary walkthrough learner's server-owned diagnostic, practice, and mastery evidence stays in the public walkthrough class and never appears in a teacher heatmap. When that learner joins a teacher workspace, they keep the same student record and gain a class-scoped mastery matrix, so the teacher sees only work done in their own class.
 - The student flow completes from diagnostic through an answer-safe work-help escalation without manual database edits.
 - Maya receives the specific common-denominator diagnosis based on deterministic answer evidence.

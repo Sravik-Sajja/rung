@@ -10,7 +10,7 @@ Rung is a middle-school fractions prototype for differentiated instruction. A le
 4. Set `DEMO_MODE=true` for the local walkthrough.
 5. Run `npm run dev` and open [http://localhost:3000/demo](http://localhost:3000/demo).
 
-The default local walkthrough works without Supabase: it uses a process-local temporary learner and state resets when the local server restarts. To exercise durable temporary learners and teacher evidence, first apply Supabase migrations `001` through `008`, configure the Supabase URL and service-role key, then run `npm run seed`. Seeding restores the canonical fictional class and removes temporary participant/runtime data from prior rehearsals.
+The default local walkthrough works without Supabase: it uses a process-local temporary learner and state resets when the local server restarts. To exercise durable temporary learners and teacher evidence, first apply every Supabase migration in `supabase/migrations/` in filename order (`001` through `020`), configure the Supabase URL and service-role key, then run `npm run seed`. Seeding references tables created by the later migrations, so a partial migration set will fail. Seeding restores the canonical fictional class and removes temporary participant/runtime data from prior rehearsals.
 
 `.env.local` is local-only. Never commit or expose keys in screenshots, logs, browser code, or pull requests.
 
@@ -29,7 +29,7 @@ The default local walkthrough works without Supabase: it uses a process-local te
 - `npm test` — run the Vitest suite.
 - `npx tsc --noEmit` — type-check the project.
 - `npm run build` — build the production bundle.
-- `npm run seed` — reset/load the canonical Supabase demo tenant; requires Supabase URL and service-role credentials plus migrations `001`–`008`.
+- `npm run seed` — reset/load the canonical Supabase demo tenant; requires Supabase URL and service-role credentials plus every migration (`001`–`020`) applied.
 - `npm run reset-demo` — alias for `npm run seed`.
 
 ## Current walkthrough
@@ -37,7 +37,7 @@ The default local walkthrough works without Supabase: it uses a process-local te
 1. On `/demo`, enter a first name or nickname. The server creates a fictional temporary learner and binds it to an opaque httpOnly cookie; the URL's learner ID is only checked for consistency.
 2. Complete the diagnostic and choose a generated, validated practice plan. Durable plan ordering is explicit, so retries return the same prerequisite-first order.
 3. Answers are deterministically scored. Work-based help is available only after the server records: miss → `hint` or `guided_step` → later miss. A photo is optional, is processed only in request memory, and is never stored.
-4. Move to the teacher dashboard to see the temporary learner's stored mastery evidence alongside the seeded fictional class. Every student walkthrough starts with a new temporary learner.
+4. Public walkthrough learners are isolated from the seeded teacher dashboard: their work stays in a dedicated walkthrough class and never appears on the sample teacher view. To make a temporary learner's evidence visible to a teacher, open `/teacher-workspace`, create a workspace, and join it from the student side with its code. Every fresh student walkthrough starts with a new temporary learner.
 
 ## Known deployment limits
 

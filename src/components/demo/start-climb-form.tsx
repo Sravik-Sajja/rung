@@ -67,21 +67,17 @@ export function StartClimbForm() {
   }
 
   /**
-   * This screen greets either learner kind, so signing out has to end both.
-   * Clearing only the participant cookie left a joined learner signed in: the
-   * form appeared, then the next load greeted them again.
+   * This screen greets either learner kind. The DELETE endpoint ends every
+   * learner session held by this browser, not just the participant one, so a
+   * single call covers a learner who had also joined a class.
    */
   async function signOut() {
     if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const [participant, joined] = await Promise.all([
-        fetch("/api/demo/participant", { method: "DELETE" }),
-        fetch("/api/teacher-workspace/student-session", { method: "DELETE" }),
-      ]);
-      if (!participant.ok) throw new Error((await participant.json().catch(() => ({})) as { error?: string }).error ?? "Could not sign out.");
-      if (!joined.ok) throw new Error("Could not sign out.");
+      const response = await fetch("/api/demo/participant", { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({})) as { error?: string }).error ?? "Could not sign out.");
       setExisting(null);
       setDisplayName("");
     } catch (reason) {

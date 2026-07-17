@@ -243,8 +243,14 @@ async function durableResolution(token: string, now: Date): Promise<DemoParticip
   };
 }
 
-/** Resolves only the opaque cookie; it never reads a student ID from a client body or query. */
-export async function resolveDemoParticipantSession(request: Request, now = new Date()): Promise<DemoParticipantSessionResolution> {
+/**
+ * Resolves only the opaque cookie; it never reads a student ID from a client
+ * body or query. NAMED `...Only` deliberately: this reads a single cookie,
+ * and a browser can hold both a participant and a joined-class cookie for
+ * the same student. Call `resolveLearnerSessions` (`@/lib/auth/learner-session`)
+ * instead unless you are the reconciliation module itself.
+ */
+export async function resolveDemoParticipantSessionOnly(request: Request, now = new Date()): Promise<DemoParticipantSessionResolution> {
   const token = parseDemoParticipantCookie(request.headers.get("cookie"));
   if (!token) return { kind: "missing_cookie" };
   if (!isOpaqueSessionToken(token)) return { kind: "invalid" };

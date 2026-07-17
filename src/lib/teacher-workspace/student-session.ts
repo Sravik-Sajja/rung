@@ -127,9 +127,11 @@ export async function createTeacherWorkspaceStudentSession(input: z.infer<typeof
 }
 
 /**
- * Enrolls an existing walkthrough learner into a workspace without minting a
- * second student. Mastery is class-scoped, so the joined class opens its own
- * matrix and the learner's walkthrough work stays out of the teacher's roster.
+ * Enrolls an existing learner into a workspace without minting a second
+ * student. The learner may be a walkthrough participant OR a joined-only
+ * student from another class (the RPC accepts either live session; see
+ * migration 021). Mastery is class-scoped, so the joined class opens its own
+ * matrix and the learner's prior work stays out of this teacher's roster.
  */
 export async function joinTeacherWorkspaceAsParticipant(input: {
   joinCode: string;
@@ -203,9 +205,15 @@ function localResolution(value: string, now: Date): TeacherWorkspaceStudentSessi
 /**
  * Resolves only a server-issued opaque cookie and verifies the stored class,
  * assignment, and enrollment still agree. No request body or URL can select a
- * class or assignment for a joined student.
+ * class or assignment for a joined student. NAMED `...Only` deliberately: this
+ * reads a single cookie, and a browser can hold both a joined-class and a
+ * walkthrough participant cookie for the same student. Call
+ * `resolveLearnerSessions` (`@/lib/auth/learner-session`) instead unless you
+ * are the reconciliation module itself, this route's own GET (whose contract
+ * is "report the joined side"), or `requireTeacherWorkspaceStudentAssignment`
+ * below.
  */
-export async function resolveTeacherWorkspaceStudentSession(request: Request, now = new Date()): Promise<TeacherWorkspaceStudentSessionResolution> {
+export async function resolveTeacherWorkspaceStudentSessionOnly(request: Request, now = new Date()): Promise<TeacherWorkspaceStudentSessionResolution> {
   const value = parseTeacherWorkspaceStudentCookie(request.headers.get("cookie"));
   if (!value) return { kind: "missing_cookie" };
   if (!validToken(value)) return { kind: "invalid" };
@@ -237,7 +245,7 @@ export async function resolveTeacherWorkspaceStudentSession(request: Request, no
 
 /** Enforces the exact session-bound assignment before an assignment API acts. */
 export async function requireTeacherWorkspaceStudentAssignment(request: Request, requestedStudentId: string, requestedAssignmentId: string) {
-  const session = await resolveTeacherWorkspaceStudentSession(request);
+  const session = await resolveTeacherWorkspaceStudentSessionOnly(request);
   if (session.kind !== "resolved") throw new Error("Join a teacher workspace before accessing learner work.");
   if (session.student.studentId !== requestedStudentId || session.student.assignmentId !== requestedAssignmentId) {
     throw new Error("This joined student session cannot access that assignment.");

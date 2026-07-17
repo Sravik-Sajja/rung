@@ -5,13 +5,16 @@ import {
   DEMO_PARTICIPANT_SESSION_MAX_AGE_SECONDS,
   demoParticipantNameSchema,
   isDemoMode,
-  revokeDemoParticipantSession,
-  resolveDemoParticipantSession,
 } from "@/lib/demo/participant";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { getDemoLearnerResume, type DemoLearnerResume } from "@/lib/student/demo-learning-store";
 import { getPersistedLearnerResume, type PersistedLearnerResume } from "@/lib/student/learning-service";
-import { resolveTeacherWorkspaceStudentSession } from "@/lib/teacher-workspace/student-session";
+import {
+  learnerSessionCookieClears,
+  resolveLearnerSessions,
+  revokeAllLearnerSessions,
+  type ResolvedLearner,
+} from "@/lib/auth/learner-session";
 
 export const dynamic = "force-dynamic";
 
@@ -69,29 +72,33 @@ function publicResume(
 }
 
 /**
- * Resumes against the class this learner actually joined, not the walkthrough.
- * The joined session is server-resolved from its own cookie; the request body
- * and URL never select it.
+ * `identity` and `participant`/`joined` are correlated by construction in
+ * `resolveLearnerSessions` (see its doc comment): a temporary_participant
+ * learner always carries `participant`, a teacher_workspace_student learner
+ * always carries `joined`. TypeScript cannot express that correlation from
+ * the `LearnerSessions` type alone, so this asserts it rather than
+ * re-deriving which cookie backs the learner.
  */
-async function resumeForParticipant(
-  request: Request,
-  participant: { studentId: string; source: "local" | "supabase"; classId: string },
-) {
-  const joined = await resolveTeacherWorkspaceStudentSession(request).catch(() => null);
-  const joinedStudent = joined?.kind === "resolved" && joined.student.studentId === participant.studentId
-    ? joined.student
-    : null;
+function underlyingRecord(learner: ResolvedLearner) {
+  return learner.identity === "temporary_participant" ? learner.participant! : learner.joined!;
+}
+
+/**
+ * Resumes against the class this learner actually joined, not the walkthrough.
+ * Both cookies are already server-resolved by `resolveLearnerSessions`; a
+ * joined-only learner is always durable (there is no local rehearsal store
+ * behind that identity), so only a genuine participant can use the local store.
+ */
+async function resumeForLearner(learner: ResolvedLearner) {
+  const store = learner.participant?.source ?? "supabase";
   const active = {
-    assignmentId: joinedStudent?.assignmentId ?? canonicalDemoIds.diagnosticAssignmentId,
-    classId: joinedStudent?.classId ?? participant.classId,
+    assignmentId: learner.joined?.assignmentId ?? canonicalDemoIds.diagnosticAssignmentId,
+    classId: learner.activeClassId,
   };
-  const resume = participant.source === "local"
-    ? getDemoLearnerResume(participant.studentId)
-    : await getPersistedLearnerResume({
-      studentId: participant.studentId,
-      assignmentId: active.assignmentId,
-    });
-  return publicResume(participant, resume ?? { kind: "start" }, active);
+  const resume = store === "local"
+    ? getDemoLearnerResume(learner.studentId)
+    : await getPersistedLearnerResume({ studentId: learner.studentId, assignmentId: active.assignmentId });
+  return publicResume({ studentId: learner.studentId }, resume ?? { kind: "start" }, active);
 }
 
 /**
@@ -105,29 +112,28 @@ async function resumeForParticipant(
 export async function GET(request: Request) {
   if (!isDemoMode()) return noStore(NextResponse.json({ error: "Not found" }, { status: 404 }));
   try {
-    const session = await resolveDemoParticipantSession(request);
-    if (session.kind === "resolved") {
+    const { resolution } = await resolveLearnerSessions(request);
+    if (resolution.kind === "resolved") {
+      const { learner } = resolution;
       return noStore(NextResponse.json({
-        participant: publicParticipant(session.participant),
-        resume: await resumeForParticipant(request, session.participant),
+        participant: publicParticipant(underlyingRecord(learner)),
+        resume: await resumeForLearner(learner),
       }));
     }
-    if (session.kind === "missing_cookie") {
-      const joined = await resolveTeacherWorkspaceStudentSession(request).catch(() => null);
-      if (joined?.kind === "resolved") {
-        const student = joined.student;
-        const active = { assignmentId: student.assignmentId, classId: student.classId };
-        // A joined learner is always durable; there is no local rehearsal store
-        // behind this identity.
-        const resume = await getPersistedLearnerResume({ studentId: student.studentId, assignmentId: student.assignmentId });
-        return noStore(NextResponse.json({
-          participant: publicParticipant(student),
-          resume: publicResume(student, resume ?? { kind: "start" }, active),
-        }));
-      }
+    if (resolution.kind === "expired") {
+      return noStore(NextResponse.json({
+        error: resolution.which === "participant"
+          ? "Your temporary demo session expired. Start a new climb to continue."
+          : "Your joined teacher workspace session expired. Ask your teacher for a new code.",
+      }, { status: 401 }));
     }
-    if (session.kind === "expired") return noStore(NextResponse.json({ error: "Your temporary demo session expired. Start a new climb to continue." }, { status: 401 }));
-    if (session.kind === "invalid") return noStore(NextResponse.json({ error: "Your temporary demo session is not valid. Start a new climb to continue." }, { status: 401 }));
+    if (resolution.kind === "invalid") {
+      return noStore(NextResponse.json({
+        error: resolution.which === "participant"
+          ? "Your temporary demo session is not valid. Start a new climb to continue."
+          : "Your joined teacher workspace session is not valid. Ask your teacher for a new code.",
+      }, { status: 401 }));
+    }
     return noStore(NextResponse.json({ participant: null }, { status: 404 }));
   } catch (error) {
     return noStore(NextResponse.json({ error: error instanceof Error ? error.message : "Could not load the temporary learner." }, { status: 500 }));
@@ -165,21 +171,20 @@ export async function POST(request: Request) {
   }
 }
 
-/** Revokes the current temporary session and clears its browser cookie. */
+/**
+ * Revokes both learner sessions and clears both browser cookies. Clearing only
+ * the participant cookie left a learner who had also joined a class still
+ * signed in on that side after "signing out" — the one-sidedness this whole
+ * module exists to remove.
+ */
 export async function DELETE(request: Request) {
   if (!isDemoMode()) return noStore(NextResponse.json({ error: "Not found" }, { status: 404 }));
   try {
-    await revokeDemoParticipantSession(request);
+    await revokeAllLearnerSessions(request);
     const response = noStore(NextResponse.json({ signedOut: true }));
-    response.cookies.set({
-      name: DEMO_PARTICIPANT_COOKIE,
-      value: "",
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0,
-    });
+    for (const cookie of learnerSessionCookieClears()) {
+      response.cookies.set(cookie);
+    }
     return response;
   } catch (error) {
     return noStore(NextResponse.json({ error: error instanceof Error ? error.message : "Could not sign out." }, { status: 500 }));

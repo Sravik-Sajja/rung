@@ -73,21 +73,17 @@ export function StudentJoinForm() {
   }
 
   /**
-   * "Not you?" means this browser is a different learner now, so both identities
-   * go: the walkthrough participant that names them here, and any joined-class
-   * session it holds. Clearing only the joined session left the participant
-   * cookie intact, so the screen still greeted the previous learner.
+   * "Not you?" means this browser is a different learner now. The DELETE
+   * endpoint ends every learner session held by this browser, not just the
+   * one this screen names, so a single call is enough.
    */
   async function signOut() {
     if (signingOut) return;
     setSigningOut(true);
     setError(null);
     try {
-      const [participant, joined] = await Promise.all([
-        fetch("/api/demo/participant", { method: "DELETE" }),
-        fetch("/api/teacher-workspace/student-session", { method: "DELETE" }),
-      ]);
-      if (!participant.ok || !joined.ok) throw new Error();
+      const response = await fetch("/api/demo/participant", { method: "DELETE" });
+      if (!response.ok) throw new Error();
       setPreview((current) => (current ? { ...current, signedInAs: null } : current));
     } catch {
       setError("Could not sign out. Try again.");

@@ -12,7 +12,7 @@ import {
   DEMO_PARTICIPANT_COOKIE,
   isDemoMode,
   resetDemoParticipantStore,
-  resolveDemoParticipantSession,
+  resolveDemoParticipantSessionOnly,
 } from "@/lib/demo/participant";
 import {
   applyGeneratedDemoPracticePlan,
@@ -62,7 +62,7 @@ describe("temporary demo participants", () => {
     expect(participant.classId).toBe(publicWalkthroughIds.classId);
 
     const request = requestWithParticipantCookie(participant.sessionToken);
-    await expect(resolveDemoParticipantSession(request)).resolves.toEqual({
+    await expect(resolveDemoParticipantSessionOnly(request)).resolves.toEqual({
       kind: "resolved",
       participant: expect.objectContaining({
         studentId: participant.studentId,

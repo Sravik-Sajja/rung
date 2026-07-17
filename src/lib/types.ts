@@ -52,7 +52,7 @@ export interface HeatmapCell extends MasteryRecord {}
 export interface TeacherGroup { id: string; subskillId: string; label: string; studentIds: string[]; }
 export interface TeacherDashboard { classId: string; students: DemoStudent[]; subskills: Subskill[]; cells: HeatmapCell[]; groups: TeacherGroup[]; responseEvidenceByStudent?: Record<string, TeacherStudentEvidence["attemptsBySubskill"]>; }
 export interface LessonStep { minutes: number; activity: string; }
-export interface VettedVideo { title: string; provider: string; url: string; verificationNote: string; }
+export interface VettedVideo { title: string; provider: string; url: string; verificationNote: string; embedUrl?: string; }
 export interface TeacherGroupPlan { groupId: string; objective: string; durationMinutes: number; materials: string[]; steps: LessonStep[]; checkForUnderstanding: string; practiceItemIds: string[]; video: VettedVideo; }
 
 /**

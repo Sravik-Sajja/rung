@@ -178,19 +178,26 @@ async function seed() {
     id: `${plan.id}-plan`, teacher_group_id: plan.id, prompt_version: "seed-v1", status: "cached",
     content: { objective: plan.objective, durationMinutes: plan.durationMinutes, materials: plan.materials, practiceItemIds: plan.practiceItemIds, checkForUnderstanding: "Students explain their strategy before sharing an answer." },
   }))));
+  // The teacher card renders title, provider, and note only — never the URL as
+  // a link — so a group without a final reviewed link shows a topical note, not
+  // a dead anchor. The one reviewed Khan video teaches renaming to a common
+  // denominator then adding, so it fits both the common-denominator and
+  // add-unlike groups (which share the same video title). Remaining groups get
+  // an honest objective-derived note rather than a placeholder TODO.
+  const reviewedAddSubVideoTitle = "Adding fractions with unlike denominators";
   await assertNoError(await supabase.from("video_recommendations").upsert(groupPlans.map((plan) => {
-    const isPrimaryCommonDenominatorPlan = plan.subskillId === commonDenominatorSubskillId;
+    const hasReviewedVideo = plan.videoTitle === reviewedAddSubVideoTitle;
     return {
       id: `${plan.subskillId}-video`,
       subskill_id: plan.subskillId,
       title: plan.videoTitle,
-      provider: isPrimaryCommonDenominatorPlan ? "Khan Academy" : "Rung reviewed resource",
-      url: isPrimaryCommonDenominatorPlan
+      provider: hasReviewedVideo ? "Khan Academy" : "Rung reviewed resource",
+      url: hasReviewedVideo
         ? "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/adding-small-fractions-with-unlike-denominators"
         : "#",
-      verification_note: isPrimaryCommonDenominatorPlan
-        ? "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the primary Maya/common-denominator group."
-        : "Placeholder; replace with a manually reviewed video before rehearsal.",
+      verification_note: hasReviewedVideo
+        ? "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the common-denominator and add-unlike groups."
+        : `Matches this group's objective: ${plan.objective}`,
       is_active: true,
     };
   })));

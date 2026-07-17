@@ -25,10 +25,33 @@ export type Actor =
   | { userId: string; role: "teacher"; teacherId: string };
 ```
 
+Student routes resolve a richer actor than the union above, via `requireStudentActor` (`src/lib/auth/actor.ts`). It is the real contract every student route enforces:
+
+```ts
+export type ActorStore = "local_demo" | "persisted";
+
+export type StudentActor = {
+  studentId: string;
+  mode: "demo" | "authenticated";
+  /** Which store answers for this learner. Chosen server-side; never client-selectable. */
+  store: ActorStore;
+  identity?: "temporary_participant" | "teacher_workspace_student";
+  displayName?: string;
+  /** The learner's home class. Used when a request names no assignment. */
+  classId?: string;
+  /** Every class this actor may act in. Mastery is class-scoped, so a caller-named class is checked against this list, never trusted. */
+  classIds: string[];
+  /** Only set when the session is bound to exactly one assignment. */
+  assignmentId?: string;
+};
+```
+
 - A student request carrying `studentId` is valid only when it equals `Actor.studentId`; new production clients should omit it where the route can derive it.
 - Teachers may access only classes they teach and plans/snapshots created for those classes.
 - The Supabase service role is never used in browser code and is not a substitute for a user session in normal routes.
-- `DEMO_MODE` is disabled in production. In non-production, a server-created temporary participant is bound to an opaque httpOnly cookie and may access only that learner's records. Seeded roster identities are never active learners. A URL/body `studentId` is a consistency assertion, never the source of identity.
+- `DEMO_MODE` is disabled in production. In non-production there are two learner identities, each bound to its own opaque httpOnly cookie and each able to reach only its own learner's records: a server-created walkthrough `temporary_participant`, and a `teacher_workspace_student` who joined a class with a code. Seeded roster identities are never active learners on either. A URL/body `studentId` is a consistency assertion, never the source of identity.
+- **`store` is not a preference; it is the storage boundary.** A walkthrough participant is `local_demo` only when Supabase is unconfigured, and `persisted` otherwise; a joined workspace student is always `persisted`. Code reachable from only one of these is effectively dead on a configured deployment — which is exactly how the per-student diagnostic bank sat unused for the entire Supabase path (see the 2026-07-17 log entry).
+- **A learner may hold both cookies at once.** Joining a class adds a class rather than replacing one: both appear in `classIds`, the joined class becomes the default `classId`, and the actor stays deliberately assignment-unbound so the walkthrough diagnostic the learner was partway through remains reachable. `requireActorClass` rejects any caller-named class outside `classIds`.
 
 ### Temporary walkthrough participant
 
@@ -57,6 +80,51 @@ export type CreateDemoParticipantResponse = { participant: DemoParticipant };
 ```
 
 `GET /api/demo/participant` returns a cookie-owned, answer-free resume route: an unfinished diagnostic, pending diagnosis, active focused-practice session, mastery view, or the first diagnostic. Every resume path names the assignment or class it belongs to, so no caller falls back to the canonical walkthrough assignment. It answers for either learner kind: a walkthrough participant, or — when no participant cookie is present — a learner holding only a joined-class session, whose resume is scoped to that class's own assignment. It returns `404` with `participant: null` when neither cookie is present, and `401` for an invalid or expired participant cookie. It never silently substitutes a seeded learner. A temporary session lasts eight hours; the current seed reset removes durable temporary records, while background expiry cleanup is not yet implemented.
+
+### Teacher demo workspace
+
+Non-production only (`NODE_ENV !== "production"` and `DEMO_MODE=true`); every route below is `404` otherwise. A teacher opens a workspace, shares a join code, and learners join it. Three separate opaque httpOnly cookies exist — the walkthrough participant, the workspace owner, and the joined learner — each `path=/`, `sameSite=lax`, eight-hour max age, sha256-hashed at rest, and never returned in JSON. A joined-learner session dies with its parent workspace.
+
+**Join code format.** Six random bytes rendered as three uppercase hex quads: `ABCD-EF01-2345`, matching `/^[A-F0-9]{4}(-[A-F0-9]{4}){2}$/`. The database RPC, the server schema, and the client validation must agree on this shape.
+
+```ts
+export type TeacherWorkspaceCell = { studentId: string; subskillId: string; level: MasteryLevel; evidenceSummary: string };
+export type TeacherWorkspace = {
+  classId: string;
+  className: string;
+  teacherDisplayName: string;
+  assignmentId: string;
+  assignmentTitle: string;
+  joinCode: string;
+  /** Only ever learners who actually joined. A new workspace ships no fictional roster. */
+  students: DemoStudent[];
+  subskills: Subskill[];
+  cells: TeacherWorkspaceCell[];
+};
+/** The public projection of a joined learner. `source` is deliberately stripped. */
+export type TeacherWorkspaceStudent = {
+  studentId: string;
+  displayName: string;
+  gradeBand: string;
+  classId: string;
+  assignmentId: string;
+  expiresAt: string;
+};
+export type TeacherWorkspacePreview = {
+  workspace: { className: string; teacherDisplayName: string; assignmentTitle: string } | null;
+  signedInAs: { displayName: string } | null;
+};
+
+export type CreateTeacherWorkspaceRequest = { teacherDisplayName: string; className: string };
+/** A new learner supplies a name; an existing walkthrough participant supplies only the code. */
+export type JoinTeacherWorkspaceRequest = { joinCode: string; displayName?: string };
+export type JoinTeacherWorkspaceResponse = { student: TeacherWorkspaceStudent; joinedExisting?: true };
+```
+
+- **The join branch is chosen server-side, from the participant cookie — never from the body.** A visitor already holding a walkthrough session keeps their existing student record and gains a class-scoped mastery matrix rather than minting a second learner; `joinedExisting: true` marks that case. Only then may `displayName` be omitted. Nothing in the body can select an existing student.
+- **`GET /api/teacher-workspace/join-preview?joinCode=` answers an unknown code with `200` and `workspace: null`, not `404`** — it feeds a confirm screen, and a hard error would let a caller probe which codes are live.
+- **`DELETE /api/teacher-workspace/students/:studentId` takes its class from the owner cookie, never the URL.** Removal is scoped to that one class: the learner's `students` row and their walkthrough progress survive, and rejoining gives a clean slate rather than restoring a half-finished check-in.
+- The owner cookie is cleared at both `/` and the legacy `/teacher-workspace` path, because a cookie scoped to the latter never reached `/api/teacher-workspace/*` and "End workspace" reported success while the session and its join code stayed live.
 
 ## AI adapter
 
@@ -352,11 +420,17 @@ export type CompleteDiagnosticResponse = {
 
 Diagnostic completion projects only server-scored evidence into mastery exactly once: a miss yields `needs_support`; all-correct diagnostic evidence yields `developing`; a diagnostic never grants `mastered`; existing `mastered` remains stable. The local walkthrough and durable Supabase finalizer apply the same rule before the teacher dashboard reads its cells.
 
-Teacher student detail receives `responseEvidenceByStudent`, keyed by student and then sub-skill. Each entry contains only `{ id, itemId, prompt, visualSpec?, answerRaw, isCorrect, context, submittedAt }`, ordered newest first. It never contains an answer specification/key, solution steps, distractor mapping, AI content, peer content, or raw work/photo data.
+Teacher student detail receives `responseEvidenceByStudent`, keyed by student and then sub-skill. Each entry contains only `{ id, itemId, prompt, visualSpec?, answerRaw, isCorrect, context, submittedAt }`, ordered newest first. It never contains an answer specification/key, solution steps, distractor mapping, AI content, peer content, or raw work/photo data. The `prompt` is resolved through the response's own `itemId`, so it is the question that learner actually answered rather than the assignment's canonical slot — the two differ, because diagnostic items are generated per session.
 
 export type GetDiagnosticResponse = {
   diagnosticSessionId: string;
   assignmentId: string;
+  /**
+   * This session's own items. `id` is session-scoped (`<slot>--<diagnosticSessionId>`),
+   * not the canonical slot id in `assignment_items`, and it is the id every
+   * `POST /api/responses` for this diagnostic must carry. Two learners in one class,
+   * or one learner across two classes, receive different ids and different numbers.
+   */
   items: Array<{ id: string; prompt: string; subskillId: string; visualSpec?: ItemVisualSpec; position: number }>;
 };
 
@@ -513,6 +587,7 @@ Track A owns these handlers or equivalent server actions:
 | --- | --- | --- |
 | `GET /api/demo/participant` | non-production opaque participant cookie | `GetDemoParticipantResponse` or missing/expired/invalid status |
 | `POST /api/demo/participant` | non-production `{ displayName }` | `CreateDemoParticipantResponse` plus opaque httpOnly cookie |
+| `DELETE /api/demo/participant` | non-production, any learner cookie | `{ signedOut: true }`; ends every learner session held by this browser (both the participant and the joined-class-student sides) and clears both cookies |
 | `POST /api/responses` | authenticated student + `SubmitResponseRequest` | `SubmitResponseResponse` |
 | `GET /api/diagnostics/:assignmentId` | authenticated student | `GetDiagnosticResponse` |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student + `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
@@ -523,6 +598,14 @@ Track A owns these handlers or equivalent server actions:
 | `GET /api/students/:studentId/mastery?topicId=...` | authenticated student; ID must match actor | `GetStudentMasteryResponse` |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher assigned to class | `ClassDashboardResponse` |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher assigned to group class | `TeacherGroupPlanResponse` |
+| `POST /api/teacher-workspace/session` | non-production `CreateTeacherWorkspaceRequest` | `{ workspace: TeacherWorkspace }` (token/expiry stripped) plus opaque owner cookie |
+| `GET /api/teacher-workspace/session` | non-production owner cookie | `{ workspace: TeacherWorkspace }`; `404` no cookie, `401` expired/invalid |
+| `DELETE /api/teacher-workspace/session` | non-production owner cookie | `{ ended: true }`; revokes every joined-student session under it |
+| `GET /api/teacher-workspace/join-preview?joinCode=` | non-production | `TeacherWorkspacePreview`; unknown code is `200` with a null workspace |
+| `POST /api/teacher-workspace/student-session` | non-production `JoinTeacherWorkspaceRequest`; the branch comes from the server-resolved participant cookie | `JoinTeacherWorkspaceResponse` plus opaque joined-learner cookie |
+| `GET /api/teacher-workspace/student-session` | non-production joined-learner cookie | `{ student }` |
+| `DELETE /api/teacher-workspace/student-session` | non-production, any learner cookie | `{ signedOut: true }`; ends every learner session held by this browser (both the joined-class-student and the participant sides) and clears both cookies |
+| `DELETE /api/teacher-workspace/students/:studentId` | non-production owner cookie; class comes from the cookie, never the URL | `{ removed: studentId }`; `404` when not in that class |
 
 ## Phase-0 fixtures and constants
 

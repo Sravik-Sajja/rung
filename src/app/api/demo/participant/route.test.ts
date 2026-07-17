@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DELETE, GET, POST } from "@/app/api/demo/participant/route";
-import { resetDemoParticipantStore } from "@/lib/demo/participant";
+import { DEMO_PARTICIPANT_COOKIE, resetDemoParticipantStore } from "@/lib/demo/participant";
 import { recordDemoDiagnosticResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
+import { createTeacherWorkspace, resetTeacherWorkspaceStore } from "@/lib/teacher-workspace/session";
+import {
+  createTeacherWorkspaceStudentSession,
+  resetTeacherWorkspaceStudentSessionStore,
+  TEACHER_WORKSPACE_STUDENT_COOKIE,
+} from "@/lib/teacher-workspace/student-session";
 
 describe("/api/demo/participant", () => {
   beforeEach(() => {
     resetDemoParticipantStore();
     resetDemoLearningStore();
+    resetTeacherWorkspaceStore();
+    resetTeacherWorkspaceStudentSessionStore();
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("DEMO_MODE", "true");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
@@ -17,6 +25,8 @@ describe("/api/demo/participant", () => {
   afterEach(() => {
     resetDemoParticipantStore();
     resetDemoLearningStore();
+    resetTeacherWorkspaceStore();
+    resetTeacherWorkspaceStudentSessionStore();
     vi.unstubAllEnvs();
   });
 
@@ -86,6 +96,48 @@ describe("/api/demo/participant", () => {
 
     const resumed = await GET(new Request("http://localhost/api/demo/participant", { headers: { cookie } }));
     expect(resumed.status).toBe(401);
+  });
+
+  it("clears both learner cookies on sign-out, and neither session resolves afterwards", async () => {
+    const created = await POST(new Request("http://localhost/api/demo/participant", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName: "Ari" }),
+    }));
+    const participantCookie = created.headers.get("set-cookie")!.split(";")[0]!;
+    const participantBody = await created.json() as { participant: { studentId: string; displayName: string; gradeBand: string } };
+
+    const workspace = await createTeacherWorkspace({ teacherDisplayName: "Ms. Jordan", className: "Period 3 fractions" });
+    const joined = await createTeacherWorkspaceStudentSession({
+      joinCode: workspace.joinCode,
+      displayName: participantBody.participant.displayName,
+    });
+    const joinedCookie = `${TEACHER_WORKSPACE_STUDENT_COOKIE}=${joined.sessionToken}`;
+
+    const combinedCookie = `${participantCookie}; ${joinedCookie}`;
+    const signedOut = await DELETE(new Request("http://localhost/api/demo/participant", { headers: { cookie: combinedCookie } }));
+    expect(signedOut.status).toBe(200);
+    const clearedCookies = signedOut.headers.getSetCookie();
+    expect(clearedCookies.some((cookie) => cookie.startsWith(`${DEMO_PARTICIPANT_COOKIE}=`) && cookie.includes("Max-Age=0"))).toBe(true);
+    expect(clearedCookies.some((cookie) => cookie.startsWith(`${TEACHER_WORKSPACE_STUDENT_COOKIE}=`) && cookie.includes("Max-Age=0"))).toBe(true);
+
+    // Both cookies now name revoked, invalid sessions rather than missing ones,
+    // so this reports 401 (a stale session), not 404 (nobody signed in).
+    const resumed = await GET(new Request("http://localhost/api/demo/participant", { headers: { cookie: combinedCookie } }));
+    expect(resumed.status).toBe(401);
+  });
+
+  it("resolves a joined-only learner through the participant JSON field, resuming into their joined assignment", async () => {
+    const workspace = await createTeacherWorkspace({ teacherDisplayName: "Ms. Jordan", className: "Period 3 fractions" });
+    const student = await createTeacherWorkspaceStudentSession({ joinCode: workspace.joinCode, displayName: "Kai" });
+    const cookie = `${TEACHER_WORKSPACE_STUDENT_COOKIE}=${student.sessionToken}`;
+
+    const resumed = await GET(new Request("http://localhost/api/demo/participant", { headers: { cookie } }));
+    expect(resumed.status).toBe(200);
+    const body = await resumed.json() as { participant: { studentId: string }; resume: { kind: string; nextPath: string } };
+    expect(body.participant.studentId).toBe(student.studentId);
+    expect(body.resume.nextPath).toContain(workspace.assignmentId);
+    expect(body.resume.nextPath).not.toContain("fractions-diagnostic-v1");
   });
 
   it("rejects malformed names and production demo creation", async () => {

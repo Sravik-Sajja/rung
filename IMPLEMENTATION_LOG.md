@@ -8,12 +8,14 @@ This is the short operational view of what remains. The dated entries below are 
 
 ### Required before a deployable demo
 
-- [x] **Replace Maya as the primary entry path with a dynamic walkthrough participant.** The visitor enters a first name or nickname, receives a server-generated temporary student identity, and sees their own results in the class dashboard. **Approved fallback:** Maya remains a secondary “View the prepared Maya walkthrough” link for rehearsals and recovery.
+- [x] **Replace Maya as the primary entry path with a dynamic walkthrough participant.** The visitor enters a first name or nickname, receives a server-generated temporary student identity, and sees their own results in the class dashboard. The approved “View the prepared Maya walkthrough” fallback was subsequently removed (2026-07-16, `707cf77`); the seeded learner survives only as a roster name (`canonicalDemoIds.mayaStudentId`, displayed as “Riley Johnson”) and is no longer a reachable entry path.
 - [x] **Wire the rendered hint ladder to `/api/tutor/hint`.** The work-help escalation is server-enforced after miss -> requested `hint`/`guided_step` -> another miss, and the current Student UI does not render the retired peer gate.
 - [x] **Unify the active learner loop's storage boundary.** `requireStudentActor` dispatches every current student path to either the isolated local fallback or the durable Supabase path; a durable temporary participant never falls into local state. Legacy peer endpoints remain compatibility-only and are not part of the current Student UI.
-- [ ] **Run the full Maya rehearsal.** Five-question diagnostic -> evidence-based diagnosis -> selected practice -> safe hint ladder -> recorded miss + work-help response -> deterministic correct answer -> updated mastery visible in the teacher heatmap.
+- [ ] **Run the full learner rehearsal.** Five-question diagnostic -> evidence-based diagnosis -> selected practice -> safe hint ladder -> recorded miss + work-help response -> deterministic correct answer -> updated mastery visible in the teacher heatmap. Formerly "the Maya rehearsal"; Maya is no longer a reachable entry path, so this runs as a walkthrough participant.
+- [ ] **Rehearse the teacher workspace path**, which is now the primary demo and is not covered by the rehearsal above: create a workspace -> share the join link -> join both as a brand-new learner and as an in-progress walkthrough learner -> confirm the teacher sees only in-class work -> remove a student. Partially exercised on 2026-07-17 (see that entry for exactly which legs).
 - [x] **Run a clean production build.** `npm.cmd run build` passed on 2026-07-16 after source/type checking and static-page generation.
-- [ ] **Exercise the real Supabase deployment path.** Apply migrations through `008`, run the deterministic seed, configure auth, test RLS as a student and teacher, and set `DEMO_MODE=false` for the deployed environment.
+- [ ] **Exercise the real Supabase deployment path.** Apply migrations through `019`, run the deterministic seed, configure auth, test RLS as a student and teacher, and set `DEMO_MODE=false` for the deployed environment. Partially done: the hosted project is live and the demo student/teacher loop was driven end-to-end against it on 2026-07-17. Auth and RLS were **not** exercised, and note why that is more than a missing test — on the demo path every learner read and write goes through the service role (`configuredClient` in `learning-service.ts`), which bypasses RLS entirely. Only the production branch of `requireStudentActor` uses a session-scoped client, and then only to resolve identity and enrollments. So the `004` policies are effectively untested, and the demo loop passing says nothing about whether they hold.
+- [ ] **Establish which migrations are applied where.** There is no `supabase/config.toml`, no migration-tracking table, and no runner script — migrations are applied by hand, and the repo records nothing about what is live. `018` and `019` were applied on 2026-07-17; the state of `011`-`017` on the hosted project is unverified. Also: two migrations share the `017_` prefix, so their order is filename-lexical and undocumented.
 - [ ] **Finish production browser authentication and teacher authorization.** Production student handlers require a Supabase Auth access token, but the browser sign-in/session UI and production teacher route checks are not yet complete.
 - [ ] **Verify live AI and failure behavior.** Configure the OpenAI key/model, confirm `ai_runs` logging and cache reads, then rehearse the safe fallback with the model unavailable.
 - [ ] **Add temporary-learner expiry cleanup before any non-demo retention claim.** The cookie expires after eight hours; durable rows are currently cleared by seed/reset, not a scheduled job.
@@ -574,3 +576,62 @@ Use this template for every meaningful change:
 ### Follow-up
 
 - Completion currently always creates at least one fallback practice plan; there is not yet an explicit “no practice needed” outcome for a fully correct check-in.
+
+## 2026-07-17 — teacher demo workspaces and class-scoped mastery
+
+Logged retroactively on 2026-07-17. This work shipped in `5254353` ("Supabase support works, added teacher workspace, ability to join class") — 65 files, nine migrations, no log entry at the time. The entry below was reconstructed from the migrations and source; treat the "Follow-up" items as unverified rather than as a completed review.
+
+### Completed
+
+- **The public walkthrough is its own class (`011`).** `fractions-diagnostic-v1` moved to `fractions-walkthrough-class` and participants enroll there, so anonymous walkthrough work cannot reach a teacher heatmap. The isolation is structural, not a filter.
+- **Teacher demo workspaces (`012`, `013`, `016`).** `create_teacher_demo_workspace` mints a teacher, class, assignment, and join code atomically; `teacher_demo_sessions` holds the owner session. Codes are three uppercase hex quads (`ABCD-EF01-2345`) with a partial unique index over live ones. `016` removed the fictional roster the creator used to seed: real joiners had been sharing a table with invented work, so a workspace now starts empty and fills only as learners join.
+- **Joined-learner sessions (`013`, `015`).** `teacher_demo_student_sessions` gives each joined learner an opaque session that dies with its parent workspace. Two join paths: a new learner is minted (`join_teacher_demo_workspace`), while an existing walkthrough participant keeps their student record and gains a class-scoped matrix (`join_teacher_demo_workspace_as_participant`). `preview_teacher_demo_workspace` backs the confirm screen.
+- **Class-scoped mastery (`014`).** `mastery` gained `class_id`; the primary key became `(student_id, class_id, subskill_id)`; `class_mastery_heatmap` joins `class_enrollments` on both student and class so an unenrolled learner cannot surface on a roster. The finalizer derives the class from the session's own assignment rather than the caller.
+- **Student removal (`017_remove_workspace_student`).** Class-scoped purge; the `students` row survives, so a walkthrough participant keeps the climb they started and rejoining gives a clean slate.
+- **`ai_runs` cache index (`017_ai_run_cache_index`)** and the process-local **curriculum cache** (`src/lib/content/curriculum-cache.ts`).
+- Both `teacher_demo_sessions` and `teacher_demo_student_sessions` enable RLS with **no policies** — deny-by-default; all access is via service-role `security definer` RPCs.
+
+### Follow-up
+
+- **Nothing here was validated against a live deployment at the time it shipped**, and the `013` overload bug below suggests that gap had teeth. The end-to-end pass recorded in the next entry exercised workspace creation, joining as an existing participant, and the teacher heatmap — but not: joining as a brand-new learner, `join-preview`, student removal, workspace expiry, or `DELETE` of either session.
+- `013` created a five-arg **overload** of the workspace creator rather than replacing the four-arg version, leaving a stale creator callable until `014:85` dropped it. Worth checking whether any other RPC in `012`-`017` changed signature the same way.
+- `session.ts:100` computes a join code that the local path discards — `localWorkspace()` mints its own. Harmless today, but the two paths generate codes in different places.
+
+## 2026-07-17 — per-session diagnostic items
+
+### Bug
+
+A learner who sat the check-in, joined another class, and sat it again was asked the identical five questions. Reported as suspected caching; it was not. The persisted path served the five canonical seeded rows that `assignment_items` points at, and every teacher workspace pointed at those same five (`016_workspace_without_fictional_roster.sql:47`), so a new class meant a new `assignment_id` and a new session row but never a new question. Neither `ai_runs` (no question-generation feature exists) nor `withCurriculumCache` (correctly keyed per assignment) was involved.
+
+The per-learner question bank in `src/lib/items/diagnostic-items.ts` already existed and was already unreachable: it is called only by the in-memory demo store, and `requireStudentActor` gives any Supabase-configured participant `store: "persisted"` (`src/lib/auth/actor.ts:50`). With `NEXT_PUBLIC_SUPABASE_URL` set, `buildDiagnosticItems` never ran at all.
+
+### Completed
+
+- **`018_per_session_diagnostic_items.sql`.** Adds `diagnostic_session_items` (RLS on, no policies — service-role only, matching `items`) and `materialize_diagnostic_session_items`, a `security definer` RPC that mints one learner's five items inside a single transaction, idempotent under the session's own lock. Generated items are inserted `is_active = false`, following `006`.
+- **`buildDiagnosticSessionItems`** (`src/lib/items/diagnostic-items.ts`). Seeds on `studentId:assignmentId:diagnosticSessionId` and gives each item a session-scoped id (`<slot>--<session>`) while keeping the canonical slot id separate. `buildDiagnosticItems` is unchanged and still serves the local path.
+- **`learning-service.ts`.** All four persisted diagnostic read sites now resolve through `administeredItems`, which reads the session's own items and falls back to the assignment's seeded five for pre-migration sessions. Materialization happens only for sessions with zero responses.
+- **`019_purge_generated_diagnostic_items.sql`.** See "Bug found and fixed during validation" below.
+- **`supabase/seed.ts`.** Deletes a session's generated items before the session, mirroring the existing generated-practice-item cleanup.
+
+### Decisions
+
+- **Persist the generated items rather than derive them on read.** Deriving was cheaper and needed no migration, but teacher evidence joins `student_responses.item_id -> items` (`src/lib/teacher/repository.ts:74`). Keeping the canonical ids and varying only the prompt would have left the teacher reading the seeded row — same id, different numbers, no error — silently breaking the teacher question/answer view added on 2026-07-16. Persisting is what keeps the learner's question, the scorer's answer key, and the teacher's view the same object.
+- **The finalizer had to be rebound to the session.** `010`/`014` joined responses against `assignment_items`; a per-session id is absent from that table, so every response would have failed the join and the finalizer would have written zero mastery — a blank heatmap with no error anywhere. This was the one change without which per-session items break the product silently.
+- **Session items are cacheable, but the unmaterialized empty is not.** `withCurriculumCache` is keyed `diagnostic-session-items:<sessionId>`. A resume racing a start would otherwise pin an empty read for the full TTL and serve seeded questions while scoring used the real ones, so that read rejects instead of caching.
+
+### Validation
+
+- Both migrations were dry-run inside a transaction and then applied to the hosted Supabase project. **They are live on the deployed database**; `git` is not the source of truth for what has been applied (see Follow-up).
+- Verified end-to-end against the running dev server and hosted database, driving the real HTTP routes: one participant, same `studentId` across both classes (`joinedSameStudent: true`), different prompts and different item ids in each; completion returned 200; the teacher heatmap filled all five cells; and the teacher evidence join resolved to the generated prompt for 5/5 responses, 0 falling back to a seeded row.
+- `npx tsc --noEmit` clean; 201 tests pass, including new cases pinning that the class alone rerolls the questions (session held fixed) and that `018` carries forward `014`'s class scoping.
+
+### Bug found and fixed during validation
+
+`018` introduced a leak: deleting a diagnostic session cascades its `diagnostic_session_items` link but strands the `items` rows, which are inactive and unreferenced but permanent. Found 5 orphans from `remove_teacher_demo_workspace_student` (`017_remove_workspace_student.sql:42`). No evidence was ever lost — responses die with the session, so nothing pointed at them — but the count only ever grew. `019` collects the item ids before the cascade, deletes them explicitly guarded on `item_type`, and sweeps what was already stranded. Post-fix state: 35 items / 35 links / 7 sessions, zero orphans.
+
+### Follow-up
+
+- **Two migrations are numbered `017`** (`017_remove_workspace_student.sql`, committed; `017_ai_run_cache_index.sql`, added in the same commit). Apply order is ambiguous for anything sorting by filename. Pre-existing, unrelated to this work; renumber the cache-index one.
+- **There is no record of which migrations have been applied to the hosted project.** There is no `supabase/config.toml`, no migration-tracking table, and no runner script — migrations are applied by hand. `018` and `019` are applied; the state of `011`-`017` is unverified. This is the gap behind the unchecked "Exercise the real Supabase deployment path" item above.
+- The number-line slot's two forms share prompt text, so that one question can look unchanged across two sittings even though its visual differs; its operand pool is also the smallest (denominators 2, 4, 5). Widening `FORM_BANK` for that slot would make the reroll visible on every question.
+- `assignment_items` is now a slot list rather than a description of what any learner saw. Its name and its `architecture.md` row have been updated to say so, but the seeded five must remain: `014`/`016` `raise exception` without them.
