@@ -10,6 +10,31 @@ import type { TeacherDashboard } from "@/lib/types";
 
 export function DashboardView({ dashboard }: { dashboard: TeacherDashboard }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [assignedFollowUps, setAssignedFollowUps] = useState<Set<string>>(() => new Set());
+  const [sentReminders, setSentReminders] = useState<Set<string>>(() => new Set());
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  function followUpKey(studentId: string, subskillId: string) {
+    return `${studentId}:${subskillId}`;
+  }
+
+  function assignFollowUp(studentId: string, subskillId: string) {
+    const student = dashboard.students.find((candidate) => candidate.id === studentId);
+    const subskill = dashboard.subskills.find((candidate) => candidate.id === subskillId);
+    setAssignedFollowUps((current) => new Set(current).add(followUpKey(studentId, subskillId)));
+    setActionNotice(`Assigned a 3-question follow-up to ${student?.displayName ?? "student"} for ${subskill?.name ?? "this skill"}.`);
+  }
+
+  function sendReminder(studentId: string, subskillId: string) {
+    const student = dashboard.students.find((candidate) => candidate.id === studentId);
+    const subskill = dashboard.subskills.find((candidate) => candidate.id === subskillId);
+    setSentReminders((current) => new Set(current).add(followUpKey(studentId, subskillId)));
+    setActionNotice(`Sent ${student?.displayName ?? "the student"} a reminder to begin ${subskill?.name ?? "this skill"}.`);
+  }
+
+  function groupForCell(studentId: string, subskillId: string) {
+    return dashboard.groups.find((group) => group.subskillId === subskillId && group.studentIds.includes(studentId))?.id;
+  }
 
   const totalCells = dashboard.cells.length;
   const masteredCount = dashboard.cells.filter((cell) => cell.level === "mastered").length;
@@ -75,11 +100,21 @@ export function DashboardView({ dashboard }: { dashboard: TeacherDashboard }) {
                   <MasteryLegend dashboard={dashboard} />
                 </div>
                 <MasteryHeatmapTable
+                  assignedFollowUpKeys={assignedFollowUps}
                   dashboard={dashboard}
+                  groupIdForCell={groupForCell}
+                  onAssignFollowUp={assignFollowUp}
+                  onSendReminder={sendReminder}
                   onSelectStudent={setSelectedStudentId}
+                  reminderKeys={sentReminders}
                   selectedStudentId={selectedStudentId}
                 />
               </Card>
+              {actionNotice ? (
+                <p aria-live="polite" className="rounded-md border border-focus bg-focus-soft px-3 py-2 text-sm text-ink">
+                  {actionNotice}
+                </p>
+              ) : null}
             </section>
 
             <section aria-labelledby="groups-heading" className="mt-10">
@@ -101,8 +136,13 @@ export function DashboardView({ dashboard }: { dashboard: TeacherDashboard }) {
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {dashboard.groups.map((group) => (
                     <GroupCard
+                      followUpAssigned={group.studentIds.every((studentId) => assignedFollowUps.has(followUpKey(studentId, group.subskillId)))}
                       group={group}
                       key={group.id}
+                      onAssignFollowUp={() => {
+                        group.studentIds.forEach((studentId) => assignFollowUp(studentId, group.subskillId));
+                        setActionNotice(`Assigned a 3-question follow-up to ${group.studentIds.length} students in ${group.label}.`);
+                      }}
                       subskill={dashboard.subskills.find((subskill) => subskill.id === group.subskillId)}
                     />
                   ))}

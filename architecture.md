@@ -445,6 +445,8 @@ The heatmap is a presentation of stored mastery—not a model-generated visualiz
 
 Use accessible text labels in addition to color. Never rely on red/green alone to convey mastery state.
 
+Needs-support cells may expose a quick follow-up assignment and a link to an existing shared group lesson; developing cells may expose only the follow-up; not-started cells may expose one reminder; mastered cells have no action. In the current demo these are dashboard-session affordances only: they do not change mastery, scoring, grouping, or durable assignment records.
+
 The student-facing diagnosis must distinguish between observation and interpretation:
 
 - Observation: “On two questions, the denominators were added directly.”

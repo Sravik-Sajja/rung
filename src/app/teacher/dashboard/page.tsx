@@ -26,7 +26,7 @@ export default async function DashboardPage() {
   return (
     <AppShell active="teacher" width="wide">
       <PageHeader
-        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence, never model-generated. This prototype is not for grading.`}
+        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence.`}
         eyebrow="Teacher · fractions class"
         title="Ms. Rivera's fractions class"
       />

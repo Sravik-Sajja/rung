@@ -1,7 +1,11 @@
+"use client";
+
 // Skill-by-student heatmap: a real <table> (not div-grid) so screen readers get row/column
 // headers for free. Cells always pair a mastery token color with a text label — never color alone.
 // Data here is deterministic, stored mastery evidence; it is never model-generated.
 import { cn } from "@/components/ui";
+import Link from "next/link";
+import { useState } from "react";
 import type { MasteryLevel, TeacherDashboard } from "@/lib/types";
 
 export const MASTERY_LEVEL_ORDER: MasteryLevel[] = ["not_started", "needs_support", "developing", "mastered"];
@@ -55,12 +59,24 @@ export function MasteryLegend({ dashboard }: { dashboard: TeacherDashboard }) {
 export function MasteryHeatmapTable({
   dashboard,
   onSelectStudent,
-  selectedStudentId
+  selectedStudentId,
+  assignedFollowUpKeys = new Set<string>(),
+  onAssignFollowUp,
+  reminderKeys = new Set<string>(),
+  onSendReminder,
+  groupIdForCell,
 }: {
   dashboard: TeacherDashboard;
   onSelectStudent?: (id: string) => void;
   selectedStudentId?: string | null;
+  assignedFollowUpKeys?: ReadonlySet<string>;
+  onAssignFollowUp?: (studentId: string, subskillId: string) => void;
+  reminderKeys?: ReadonlySet<string>;
+  onSendReminder?: (studentId: string, subskillId: string) => void;
+  groupIdForCell?: (studentId: string, subskillId: string) => string | undefined;
 }) {
+  const [dismissedReminderKeys, setDismissedReminderKeys] = useState<Set<string>>(() => new Set());
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] border-collapse text-sm">
@@ -94,7 +110,7 @@ export function MasteryHeatmapTable({
               <tr key={student.id}>
                 <th
                   className={cn(
-                    "sticky left-0 z-10 border-b border-r border-border p-3 text-left text-sm font-medium text-ink",
+                    "sticky left-0 z-10 whitespace-nowrap border-b border-r border-border p-3 text-left text-sm font-medium text-ink",
                     isSelected ? "bg-accent-soft" : "bg-elevated"
                   )}
                   scope="row"
@@ -102,7 +118,7 @@ export function MasteryHeatmapTable({
                   {onSelectStudent ? (
                     <button
                       aria-pressed={isSelected}
-                      className="w-full text-left text-accent hover:underline"
+                      className="w-full whitespace-nowrap text-left text-accent hover:underline"
                       onClick={() => onSelectStudent(student.id)}
                       type="button"
                     >
@@ -121,17 +137,84 @@ export function MasteryHeatmapTable({
                       <td className="border-b border-r border-border p-2" key={`${student.id}-${subskill.id}`} />
                     );
                   }
+                  const followUpKey = `${student.id}:${subskill.id}`;
+                  const followUpAssigned = assignedFollowUpKeys.has(followUpKey);
+                  const reminderSent = reminderKeys.has(followUpKey);
+                  const groupId = groupIdForCell?.(student.id, subskill.id);
+                  const hasQuickAction = cell.level !== "mastered"
+                    && !(cell.level === "not_started" && dismissedReminderKeys.has(followUpKey));
                   return (
-                    <td className="border-b border-r border-border p-0" key={`${student.id}-${subskill.id}`}>
-                      <span
-                        className={cn(
-                          "flex min-h-[3rem] w-full items-center justify-center px-2 py-1.5 text-center text-xs font-medium leading-tight",
-                          cellClass[cell.level]
-                        )}
-                        title={cell.evidenceSummary}
+                    <td
+                      className={cn(
+                        "border-b border-r border-border p-0 align-middle",
+                        cellClass[cell.level]
+                      )}
+                      key={`${student.id}-${subskill.id}`}
+                    >
+                      <div
+                        className="group relative flex min-h-[3rem] h-full items-center justify-center"
+                        onMouseLeave={() => {
+                          if (dismissedReminderKeys.has(followUpKey)) {
+                            setDismissedReminderKeys((current) => {
+                              const next = new Set(current);
+                              next.delete(followUpKey);
+                              return next;
+                            });
+                          }
+                        }}
                       >
-                        {MASTERY_LEVEL_LABEL[cell.level]}
-                      </span>
+                        <span
+                          className={cn(
+                            "flex w-full items-center justify-center px-2 py-1.5 text-center text-xs font-medium leading-tight",
+                            hasQuickAction && "transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+                          )}
+                          title={cell.evidenceSummary}
+                        >
+                          {MASTERY_LEVEL_LABEL[cell.level]}
+                        </span>
+                        {hasQuickAction ? (
+                          <div className="pointer-events-none absolute inset-1 flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                            {cell.level === "not_started" && onSendReminder ? (
+                              reminderSent ? (
+                                <span className="rounded border border-ink/20 bg-surface-2 px-2 py-1 text-[11px] font-semibold text-ink-muted">
+                                  Reminded
+                                </span>
+                              ) : (
+                                <button
+                                  className="rounded border border-ink/30 bg-surface px-2 py-1 text-[11px] font-semibold text-ink shadow-sm hover:bg-surface-2"
+                                  onClick={() => {
+                                    onSendReminder(student.id, subskill.id);
+                                    setDismissedReminderKeys((current) => new Set(current).add(followUpKey));
+                                  }}
+                                  title="Send a reminder to begin this skill"
+                                  type="button"
+                                >
+                                  Remind
+                                </button>
+                              )
+                            ) : null}
+                            {(cell.level === "needs_support" || cell.level === "developing") && onAssignFollowUp ? (
+                              <button
+                                className="rounded border border-ink/30 bg-surface px-1.5 py-1 text-[11px] font-semibold text-ink shadow-sm hover:bg-surface-2"
+                                onClick={() => onAssignFollowUp(student.id, subskill.id)}
+                                title="Assign a 3-question follow-up"
+                                type="button"
+                              >
+                                {followUpAssigned ? "Assigned" : "Assign 3Q"}
+                              </button>
+                            ) : null}
+                            {cell.level === "needs_support" && groupId ? (
+                              <Link
+                                className="rounded border border-ink/30 bg-surface px-1.5 py-1 text-[11px] font-semibold text-ink shadow-sm hover:bg-surface-2"
+                                href={`/teacher/groups/${groupId}`}
+                                title="Open the shared group lesson"
+                              >
+                                Lesson
+                              </Link>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                   );
                 })}

@@ -263,6 +263,12 @@ export type ItemVisualSpec = {
   pointLabel: string;
 };
 
+/** Current dashboard-only teacher action state; it is not a persisted assignment contract. */
+export type HeatmapQuickAction =
+  | { kind: "assign_follow_up"; studentId: string; subskillId: string }
+  | { kind: "send_reminder"; studentId: string; subskillId: string }
+  | { kind: "open_group_lesson"; groupId: string };
+
 export type SubmitResponseRequest =
   | {
       studentId: string;

@@ -30,11 +30,11 @@ const students = canonicalDemoStudents.map((student) => ({
 }));
 
 const subskills = [
-  { id: "equivalent-fractions", topic_id: fractionsTopicId, slug: "equivalent-fractions", name: "Equivalent fractions", description: "Recognize and generate equivalent fractions.", prerequisite_subskill_id: null },
-  { id: "fraction-number-line", topic_id: fractionsTopicId, slug: "fraction-number-line", name: "Fractions on a number line", description: "Locate fractions on a number line.", prerequisite_subskill_id: "equivalent-fractions" },
-  { id: commonDenominatorSubskillId, topic_id: fractionsTopicId, slug: commonDenominatorSubskillId, name: "Find a common denominator", description: "Rewrite fractions with a shared denominator.", prerequisite_subskill_id: "equivalent-fractions" },
-  { id: "add-unlike-denominators", topic_id: fractionsTopicId, slug: "add-unlike-denominators", name: "Add fractions with unlike denominators", description: "Add fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
-  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract fractions after finding a common denominator.", description: "Subtract fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
+  { id: "equivalent-fractions", topic_id: fractionsTopicId, slug: "equivalent-fractions", name: "Equivalent Fractions", description: "Recognize and generate equivalent fractions.", prerequisite_subskill_id: null },
+  { id: "fraction-number-line", topic_id: fractionsTopicId, slug: "fraction-number-line", name: "Fractions on a Number Line", description: "Locate fractions on a number line.", prerequisite_subskill_id: "equivalent-fractions" },
+  { id: commonDenominatorSubskillId, topic_id: fractionsTopicId, slug: commonDenominatorSubskillId, name: "Find a Common Denominator", description: "Rewrite fractions with a shared denominator.", prerequisite_subskill_id: "equivalent-fractions" },
+  { id: "add-unlike-denominators", topic_id: fractionsTopicId, slug: "add-unlike-denominators", name: "Add Unlike Denominators", description: "Add fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
+  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract Unlike Denominators", description: "Subtract fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
 ] as const;
 
 const items = [

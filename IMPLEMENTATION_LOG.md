@@ -520,3 +520,22 @@ Use this template for every meaningful change:
 - `npx tsc --noEmit`: passed.
 - `npm test`: 26 files / 155 tests passed.
 - `git diff --check`: passed.
+
+## 2026-07-16 - heatmap quick actions
+
+### Completed
+
+- Fixed mastery-cell color coverage and kept every student name on one line, so variable row heights no longer leave gray-looking bands in the heatmap.
+- Added hover/focus actions by mastery level: Needs support offers Assign 3Q plus a shared lesson link, Developing offers Assign 3Q, Not started offers one Remind action, and Mastered remains informational.
+- Follow-up assignments and reminders provide immediate confirmation. A reminder dismisses for the current hover, returns as a non-clickable Reminded status later, and cannot be sent again in the same dashboard session.
+- Reworked group cards around Start mini-lesson and Assign 3 questions actions.
+
+### Validation
+
+- npx tsc --noEmit: passed.
+- Focused teacher heatmap tests: 4 passed.
+- git diff --check: passed.
+
+### Bugs / follow-ups
+
+- Quick actions are intentionally browser-session UI state for the demo. Add a teacher-assignment persistence contract, recipient delivery path, and audit state before treating them as real classroom assignments or reminders.

@@ -12,11 +12,11 @@ export const DEMO_CLASS_ID = canonicalDemoIds.classId;
 export const demoStudents: DemoStudent[] = canonicalDemoStudents.map((student) => ({ id: student.id, displayName: student.displayName, gradeBand: "6–8" }));
 
 export const demoSubskills: Subskill[] = [
-  { id: "equivalent-fractions", name: "Equivalent fractions" },
-  { id: canonicalDemoSubskillIds[1], name: "Fractions on a number line" },
-  { id: canonicalDemoSubskillIds[2], name: "Find a common denominator" },
-  { id: "add-unlike-denominators", name: "Add unlike denominators" },
-  { id: "subtract-unlike-denominators", name: "Subtract unlike denominators" }
+  { id: "equivalent-fractions", name: "Equivalent Fractions" },
+  { id: canonicalDemoSubskillIds[1], name: "Fractions on a Number Line" },
+  { id: canonicalDemoSubskillIds[2], name: "Find a Common Denominator" },
+  { id: "add-unlike-denominators", name: "Add Unlike Denominators" },
+  { id: "subtract-unlike-denominators", name: "Subtract Unlike Denominators" }
 ];
 
 const levelSummary: Record<string, string> = {
