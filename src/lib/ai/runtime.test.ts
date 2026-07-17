@@ -68,6 +68,35 @@ function workAnalysisInput() {
 }
 
 describe("live AI adapter resolution", () => {
+  it("rejects a teacher lesson whose displayed steps are outside the 15–20 minute contract", async () => {
+    const store = new FakeRunStore();
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient({
+        objective: "Practice common denominators.",
+        materials: ["Pencil", "Paper"],
+        steps: [
+          { minutes: 3, activity: "Warm up with a denominator check." },
+          { minutes: 3, activity: "Model one common-denominator example." },
+          { minutes: 3, activity: "Solve one example together." },
+        ],
+        checkForUnderstanding: "Ask each learner to name a common denominator.",
+      }),
+      runStore: store,
+    });
+
+    const result = await adapter.generateTeacherLessonDraft({
+      groupLabel: "Common denominators",
+      subskillName: "Find common denominators",
+      studentCount: 4,
+      practiceItemCount: 3,
+      promptVersion: "teacher-lesson-v4",
+    });
+
+    expect(result.source).toBe("fallback");
+    expect(result.steps.reduce((total, step) => total + step.minutes, 0)).toBe(19);
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
   it("uses the default model when an optional feature override is blank", () => {
     expect(modelFor("practice_plan", { defaultModel: "gpt-5.6-terra", practice_plan: "" })).toBe("gpt-5.6-terra");
   });

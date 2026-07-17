@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   analyzeWorkInputSchema,
   generatedPracticePlanSchema,
+  hasValidTeacherLessonDuration,
   teacherLessonDraftSchema,
   tutorHintInputSchema
 } from "@/lib/ai/contracts";
@@ -458,6 +459,11 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
             "Do not name students, invent evidence, provide answer keys, or write a completed solution.",
           ].join(" "),
           user: JSON.stringify(input),
+        },
+        validate: (payload) => {
+          if (!hasValidTeacherLessonDuration(payload.steps)) {
+            throw new Error("Teacher lesson steps must total 15–20 minutes.");
+          }
         },
         fallback: () => ({
           objective: `Strengthen ${input.subskillName} through a short model-and-practice lesson.`,

@@ -176,6 +176,18 @@ export const teacherLessonDraftSchema = metaSchema.extend({
 });
 export type TeacherLessonDraft = z.infer<typeof teacherLessonDraftSchema>;
 
+export const TEACHER_LESSON_MINUTES = { min: 15, max: 20 } as const;
+
+/** The lesson card duration is derived from its actual timed steps. */
+export function teacherLessonDurationMinutes(steps: ReadonlyArray<{ minutes: number }>) {
+  return steps.reduce((total, step) => total + step.minutes, 0);
+}
+
+export function hasValidTeacherLessonDuration(steps: ReadonlyArray<{ minutes: number }>) {
+  const duration = teacherLessonDurationMinutes(steps);
+  return duration >= TEACHER_LESSON_MINUTES.min && duration <= TEACHER_LESSON_MINUTES.max;
+}
+
 export interface RungAiAdapter {
   diagnoseExplanation(input: { studentId: string; assignmentId: string; gradeBand: string; targetSubskillId: string; supportedMisconceptionTags: string[]; evidence: DiagnosisEvidence[]; promptVersion: string }): Promise<DiagnosisExplanation>;
   tutorHint(input: TutorHintInput): Promise<TutorHint>;

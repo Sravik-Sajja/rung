@@ -476,3 +476,17 @@ Use this template for every meaningful change:
 
 - The teacher group page still renders a live/cache/fallback draft on request; persist selected teacher lesson snapshots and add a teacher-visible retry/error treatment before production use.
 - Prompting for lessons could be better
+
+## 2026-07-16 - teacher lesson duration integrity
+
+### Completed
+
+- The teacher lesson card now derives its duration badge from the generated timed steps, so the displayed value cannot remain stale from the seeded plan.
+- The AI boundary rejects live or cached lesson drafts whose steps total outside 15â€“20 minutes and uses the deterministic 19-minute fallback instead.
+- Added a runtime regression test for an invalid nine-minute lesson draft.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- `npm test`: 23 files / 146 tests passed.
+- `git diff --check`: passed.

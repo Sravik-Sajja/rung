@@ -9,6 +9,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { demoItems } from "@/lib/demo-data";
 import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan } from "@/lib/teacher/grouping";
 import { runtimeAiAdapter } from "@/lib/ai/adapter";
+import { teacherLessonDurationMinutes } from "@/lib/ai/contracts";
 
 export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
@@ -30,7 +31,14 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
     practiceItemCount: practiceItems.length,
     promptVersion: "teacher-lesson-v4",
   });
-  const plan = { ...seededPlan, objective: draft.objective, materials: draft.materials, steps: draft.steps, checkForUnderstanding: draft.checkForUnderstanding };
+  const plan = {
+    ...seededPlan,
+    objective: draft.objective,
+    durationMinutes: teacherLessonDurationMinutes(draft.steps),
+    materials: draft.materials,
+    steps: draft.steps,
+    checkForUnderstanding: draft.checkForUnderstanding,
+  };
 
   return (
     <AppShell active="teacher">

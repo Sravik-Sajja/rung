@@ -230,7 +230,7 @@ Every adapter invocation—AI, cache, fallback, or safety rejection—creates an
 
 generateTeacherLessonDraft receives a group label, sub-skill name, student count, practice-item count, and prompt version. It returns one objective, a pencil-and-paper-only materials list, 3–5 timed steps, and one check-for-understanding prompt.
 
-The steps must follow warm-up, teacher model, guided work, matched practice, and exit check. Each activity is one concrete instruction of at most 120 characters. The draft may refer generally to matched practice problems, but it must not repeat raw practice prompts, name learners, invent evidence, provide answer keys, or decide group membership. A failed or rejected call returns the same short, pencil-and-paper fallback shape. The cache key includes the prompt version; current teacher prompt version is teacher-lesson-v4.
+The steps must follow warm-up, teacher model, guided work, matched practice, and exit check. Each activity is one concrete instruction of at most 120 characters. Their minutes must total 15â€“20; the lesson card derives its displayed duration from that total rather than from the seeded plan. The draft may refer generally to matched practice problems, but it must not repeat raw practice prompts, name learners, invent evidence, provide answer keys, or decide group membership. A failed or rejected call returns the same short, pencil-and-paper fallback shape. The cache key includes the prompt version; current teacher prompt version is teacher-lesson-v4.
 
 ### Student practice workspace contract
 
