@@ -5,6 +5,7 @@
 import { Badge, Card } from "@/components/ui";
 import { GroupCard } from "@/components/teacher/group-card";
 import { MASTERY_LEVEL_LABEL, MASTERY_LEVEL_ORDER } from "@/components/teacher/mastery-heatmap";
+import { ResponseEvidence } from "@/components/teacher/response-evidence";
 import type { MasteryLevel, TeacherDashboard } from "@/lib/types";
 
 const MASTERY_TONE: Record<MasteryLevel, "none" | "support" | "developing" | "mastered"> = {
@@ -82,6 +83,13 @@ export function StudentDetail({
             );
           })}
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <ResponseEvidence
+          evidenceBySubskill={dashboard.responseEvidenceByStudent?.[studentId] ?? {}}
+          subskills={dashboard.subskills}
+        />
       </div>
 
       <div className="space-y-3">

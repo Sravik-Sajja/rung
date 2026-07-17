@@ -231,6 +231,8 @@ The schema above describes the desired canonical model. The following tables are
 
 The dashboard computes group membership from current `mastery` on every read. When a teacher selects a group for planning, persist the membership and generated plan as a dated snapshot. The dashboard remains current while the selected plan stays stable and auditable.
 
+When a teacher opens a student detail, the dashboard also provides teacher-safe response evidence grouped by sub-skill: the item prompt, the learner's submitted answer, the trusted correct/needs-follow-up result, and whether it came from the diagnostic or focused practice. This is an audit aid, not another scoring system. It deliberately excludes answer specifications, correct answers, solution steps, distractor maps, AI diagnosis/hint text, peer material, and raw typed/photo work. The local walkthrough reads this projection from process memory; the durable path reads server-scored `student_responses` joined to learner-safe item presentation fields.
+
 ## 8. Mastery and diagnostic rules
 
 The hackathon needs explainable mastery, not a sophisticated but opaque learner model.
@@ -254,7 +256,10 @@ These thresholds are product-demo rules, not a claim of validated educational me
 2. Map missed items to their declared sub-skills, and map each wrong answer to its misconception tag via the item's `distractor_map`.
 3. Select the highest-priority gap: missing prerequisite first; otherwise the most frequently missed target sub-skill.
 4. Deterministically select one supported misconception tag from the evidence using the prerequisite-first rule. GPT-5.6 may render that already-selected diagnosis in student-friendly language, but it cannot select or introduce a tag.
-5. Store the deterministic evidence (scores, sub-skill map, selected tag) and the AI explanation separately. The deterministic selection is auditable ground truth.
+5. On first completion only, project the server-scored diagnostic evidence into `mastery`: any miss becomes `needs_support`; all-correct evidence becomes `developing`; a diagnostic never directly grants `mastered`; an existing `mastered` level remains stable while its evidence count increases. Untouched sub-skills retain their current level.
+6. Store the deterministic evidence (scores, sub-skill map, selected tag) and the AI explanation separately. The deterministic selection is auditable ground truth.
+
+The local non-production fallback applies this same projection to its process-local `globalThis` mastery state so the teacher dashboard can show the temporary learner during one server lifetime. The durable path applies it atomically inside the locked Supabase diagnostic-completion finalizer, from stored `student_responses.is_correct` values only—not from browser or model-supplied evidence. In both modes, practice continues from that projected mastery state.
 
 For the main demo student, the selected diagnosis must be stable: **finds no common denominator before adding fractions**. Seed answer choices and diagnostic mappings that reliably demonstrate this error.
 

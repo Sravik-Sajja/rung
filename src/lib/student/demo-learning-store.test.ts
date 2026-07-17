@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoPractice, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
+import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoPractice, getDemoStudentMastery, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import type { Item } from "@/lib/types";
@@ -30,6 +30,28 @@ describe("demo diagnostic to practice journey", () => {
     expect(completed?.practiceSession.itemCount).toBe(4);
     const practice = getDemoPractice(completed!.practiceSession.id, canonicalDemoIds.mayaStudentId)!;
     expect(practice.items.map((item) => item.itemId)).toEqual(["common-denominator-1", "common-denominator-2", "add-unlike-1", "add-unlike-2"]);
+  });
+
+  it("projects a completed local diagnostic into one canonical mastery state exactly once", () => {
+    const studentId = "demo-learner-projection";
+    const diagnostic = startDemoDiagnostic(studentId);
+    for (const item of buildDiagnosticItems(studentId)) {
+      recordDemoDiagnosticResponse({
+        diagnosticSessionId: diagnostic.diagnosticSessionId,
+        studentId,
+        itemId: item.id,
+        answer: answerFor(item, "common-denominator-1"),
+      });
+    }
+
+    const first = completeDemoDiagnostic({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId })!;
+    const second = completeDemoDiagnostic({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId })!;
+    expect(second).toBe(first);
+
+    const mastery = getDemoStudentMastery(studentId);
+    expect(mastery.find((entry) => entry.subskillId === "find-common-denominator")).toMatchObject({ level: "needs_support" });
+    expect(mastery.find((entry) => entry.subskillId === "equivalent-fractions")).toMatchObject({ level: "developing" });
+    expect(mastery.find((entry) => entry.subskillId === "subtract-unlike-denominators")).toMatchObject({ level: "developing" });
   });
 
   it("advances after a correct answer and requeues a missed item once", () => {

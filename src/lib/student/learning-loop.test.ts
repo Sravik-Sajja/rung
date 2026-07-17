@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectDiagnosticEvidence, nextMasteryLevel, selectDiagnosticGap, selectPracticeItems, shouldRequeue } from "@/lib/student/learning-loop";
+import { collectDiagnosticEvidence, nextMasteryLevel, projectDiagnosticMastery, selectDiagnosticGap, selectPracticeItems, shouldRequeue } from "@/lib/student/learning-loop";
 import type { Item } from "@/lib/types";
 
 const items: Item[] = [
@@ -28,5 +28,15 @@ describe("diagnostic-driven practice loop", () => {
     expect(shouldRequeue(["missed"])).toBe(false);
     expect(shouldRequeue(["pending"])).toBe(true);
     expect(nextMasteryLevel("mastered", 2, false, false)).toEqual({ level: "mastered", evidenceCount: 3 });
+  });
+
+  it("projects diagnostic evidence without awarding mastery", () => {
+    const correct = collectDiagnosticEvidence([items[0]], new Map([["common-1", { answer: "12", isCorrect: true }]]));
+    const incorrect = collectDiagnosticEvidence([items[1]], new Map([["add-1", { answer: "2/7", isCorrect: false }]]));
+
+    expect(projectDiagnosticMastery({ level: "not_started", evidenceCount: 0 }, correct)).toEqual({ level: "developing", evidenceCount: 1 });
+    expect(projectDiagnosticMastery({ level: "developing", evidenceCount: 1 }, incorrect)).toEqual({ level: "needs_support", evidenceCount: 2 });
+    expect(projectDiagnosticMastery({ level: "mastered", evidenceCount: 3 }, incorrect)).toEqual({ level: "mastered", evidenceCount: 4 });
+    expect(projectDiagnosticMastery({ level: "not_started", evidenceCount: 0 }, [])).toEqual({ level: "not_started", evidenceCount: 0 });
   });
 });

@@ -490,3 +490,33 @@ Use this template for every meaningful change:
 - `npx tsc --noEmit`: passed.
 - `npm test`: 23 files / 146 tests passed.
 - `git diff --check`: passed.
+
+## 2026-07-16 - custom learner mastery reaches the teacher dashboard
+
+### Completed
+
+- Fixed the missing diagnostic-to-mastery bridge: completing a diagnostic now writes deterministic mastery evidence before the student enters focused practice.
+- Both storage modes use the same rule: a diagnostic miss becomes `needs_support`, all-correct evidence becomes `developing`, diagnostics never grant `mastered`, and an existing mastered level remains stable while evidence increments.
+- The local walkthrough keeps this projected state in the process-local, hot-reload-safe store that the teacher repository already reads; custom learners therefore show their real diagnostic and practice state in the teacher detail view until the local server restarts.
+- Added migration `010_diagnostic_mastery_finalizer.sql`. The durable Supabase finalizer locks the diagnostic session and derives mastery only from stored, server-scored responses in the same transaction as completion; retries do not double-count evidence.
+- A configured Supabase dashboard no longer silently replaces a database failure with static/local demo data, avoiding misleading missing-student views.
+
+### Validation
+
+- Full TypeScript and Vitest verification is required after merging the parallel tracks.
+- Apply migration `010_diagnostic_mastery_finalizer.sql` before validating the durable Supabase walkthrough.
+
+## 2026-07-16 - teacher response evidence
+
+### Completed
+
+- Added teacher-only response evidence grouped by learner and sub-skill. Each entry shows the exact prompt, submitted answer, trusted correct/needs-follow-up status, and diagnostic or focused-practice source.
+- Implemented the same evidence projection for the local server-memory walkthrough and the durable Supabase class dashboard. Retry history is retained newest-first.
+- Kept the privacy boundary: no answer keys, solution steps, distractor maps, tutor/diagnosis content, peer content, typed work, or photos reach this teacher UI.
+- Added an isolated response-evidence component and repository/component tests. No public API route or schema migration was needed.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- `npm test`: 26 files / 155 tests passed.
+- `git diff --check`: passed.

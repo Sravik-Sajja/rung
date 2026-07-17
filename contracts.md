@@ -330,6 +330,10 @@ export type CompleteDiagnosticResponse = {
   }>;
 };
 
+Diagnostic completion projects only server-scored evidence into mastery exactly once: a miss yields `needs_support`; all-correct diagnostic evidence yields `developing`; a diagnostic never grants `mastered`; existing `mastered` remains stable. The local walkthrough and durable Supabase finalizer apply the same rule before the teacher dashboard reads its cells.
+
+Teacher student detail receives `responseEvidenceByStudent`, keyed by student and then sub-skill. Each entry contains only `{ id, itemId, prompt, visualSpec?, answerRaw, isCorrect, context, submittedAt }`, ordered newest first. It never contains an answer specification/key, solution steps, distractor mapping, AI content, peer content, or raw work/photo data.
+
 export type GetDiagnosticResponse = {
   diagnosticSessionId: string;
   assignmentId: string;

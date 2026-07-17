@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+}));
+
+vi.mock("@supabase/supabase-js", () => ({ createClient: mocks.createClient }));
+
 import { requireStudentActor } from "@/lib/auth/actor";
 import {
   createDemoParticipant,
@@ -9,10 +16,12 @@ import {
 } from "@/lib/demo/participant";
 import {
   applyGeneratedDemoPracticePlan,
-  createGeneratedDemoPracticeSession,
+  completeDemoDiagnostic,
   getDemoPractice,
+  recordDemoDiagnosticResponse,
   recordDemoPracticeResponse,
   resetDemoLearningStore,
+  startDemoDiagnostic,
 } from "@/lib/student/demo-learning-store";
 import { getTeacherDashboard } from "@/lib/teacher/repository";
 
@@ -24,6 +33,7 @@ function requestWithParticipantCookie(token: string) {
 
 describe("temporary demo participants", () => {
   beforeEach(() => {
+    mocks.createClient.mockReset();
     resetDemoParticipantStore();
     resetDemoLearningStore();
     vi.stubEnv("NODE_ENV", "test");
@@ -80,7 +90,22 @@ describe("temporary demo participants", () => {
     expect(before?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
       .toEqual(expect.objectContaining({ level: "not_started" }));
 
-    const practiceSessionId = createGeneratedDemoPracticeSession(participant.studentId);
+    const diagnostic = startDemoDiagnostic(participant.studentId);
+    for (const item of diagnostic.items) {
+      expect(recordDemoDiagnosticResponse({
+        diagnosticSessionId: diagnostic.diagnosticSessionId,
+        studentId: participant.studentId,
+        itemId: item.id,
+        answer: "0",
+      })).not.toBeNull();
+    }
+    const completion = completeDemoDiagnostic({
+      diagnosticSessionId: diagnostic.diagnosticSessionId,
+      studentId: participant.studentId,
+    });
+    expect(completion).not.toBeNull();
+
+    const practiceSessionId = completion!.practiceSession.id;
     const applied = applyGeneratedDemoPracticePlan({
       practiceSessionId,
       studentId: participant.studentId,
@@ -104,5 +129,25 @@ describe("temporary demo participants", () => {
     const after = await getTeacherDashboard();
     expect(after?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
       .toEqual(expect.objectContaining({ level: "developing", evidenceSummary: "Updated from your focused practice." }));
+  });
+
+  it("does not replace configured database failures with local demo data", async () => {
+    const participant = await createDemoParticipant({ displayName: "Database check" });
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
+    mocks.createClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ data: null, error: { message: "database unavailable" } }),
+        })),
+      })),
+    });
+
+    await expect(getTeacherDashboard()).rejects.toThrow("Could not load teacher dashboard: database unavailable");
+    expect(mocks.createClient).toHaveBeenCalled();
+    // The locally-created learner proves this is not merely an empty-store
+    // failure: the repository must still surface the database error instead
+    // of presenting their local row as a successful durable dashboard.
+    expect(participant.source).toBe("local");
   });
 });

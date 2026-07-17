@@ -15,6 +15,31 @@ export interface DiagnosticGap {
   evidence: DiagnosticEvidence[];
 }
 
+export interface MasteryEvidenceState {
+  level: MasteryLevel;
+  evidenceCount: number;
+}
+
+/**
+ * Applies diagnostic evidence without letting a short check-in award mastery.
+ * A miss takes precedence when a diagnostic contains mixed evidence for one
+ * skill, while an already-mastered record is never downgraded by this demo
+ * projection. Practice is the only loop that can promote to mastered.
+ */
+export function projectDiagnosticMastery(
+  previous: MasteryEvidenceState,
+  evidence: readonly DiagnosticEvidence[],
+): MasteryEvidenceState {
+  if (!evidence.length) return previous;
+
+  const evidenceCount = previous.evidenceCount + evidence.length;
+  if (previous.level === "mastered") return { level: "mastered", evidenceCount };
+  if (evidence.some((entry) => !entry.isCorrect)) {
+    return { level: "needs_support", evidenceCount };
+  }
+  return { level: "developing", evidenceCount };
+}
+
 export function collectDiagnosticEvidence(items: readonly Item[], answersByItemId: ReadonlyMap<string, { answer: string; isCorrect: boolean }>): DiagnosticEvidence[] {
   return items.flatMap((item) => {
     const response = answersByItemId.get(item.id);

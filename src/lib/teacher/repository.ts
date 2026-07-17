@@ -1,7 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { getLocalDemoParticipants } from "@/lib/demo/participant";
-import { getDemoStudentMastery } from "@/lib/student/demo-learning-store";
+import { getDemoStudentMastery, getDemoStudentResponseEvidence } from "@/lib/student/demo-learning-store";
+import type { ItemVisualSpec, TeacherAttemptEvidence, TeacherStudentEvidence } from "@/lib/types";
 import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan, groupStudentsByNeed } from "@/lib/teacher/grouping";
 import { normalizeHeatmapRows, type HeatmapQueryRow } from "@/lib/teacher/heatmap";
 
@@ -9,6 +10,105 @@ function configuredClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
+}
+
+type DurableEvidenceRow = {
+  id: string;
+  item_id: string;
+  answer_raw: string;
+  is_correct: boolean;
+  context: string;
+  submitted_at: string;
+  items: {
+    subskill_id: string;
+    prompt: string;
+    visual_spec?: ItemVisualSpec | null;
+  } | Array<{
+    subskill_id: string;
+    prompt: string;
+    visual_spec?: ItemVisualSpec | null;
+  }> | null;
+};
+
+function teacherEvidenceBySubskill(attempts: readonly (TeacherAttemptEvidence & { subskillId: string })[]): TeacherStudentEvidence["attemptsBySubskill"] {
+  const grouped: TeacherStudentEvidence["attemptsBySubskill"] = {};
+  for (const attempt of attempts) {
+    const { subskillId, ...safeAttempt } = attempt;
+    (grouped[subskillId] ??= []).push(safeAttempt);
+  }
+  return grouped;
+}
+
+/**
+ * Returns only teacher-reviewable answer evidence for one student. The
+ * function intentionally does not expose answer specifications, distractor
+ * maps, AI diagnosis text, learner work-help submissions, or peer content.
+ */
+export async function getTeacherStudentEvidence(studentId: string): Promise<TeacherStudentEvidence> {
+  const client = configuredClient();
+  if (!client) {
+    return { studentId, attemptsBySubskill: teacherEvidenceBySubskill(getDemoStudentResponseEvidence(studentId)) };
+  }
+
+  const { data, error } = await client
+    .from("student_responses")
+    .select("id, item_id, answer_raw, is_correct, context, submitted_at, items!inner(subskill_id, prompt, visual_spec)")
+    .eq("student_id", studentId)
+    .in("context", ["diagnostic", "practice"])
+    .order("submitted_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) throw new Error(`Could not load teacher student evidence: ${error.message}`);
+
+  const attempts = ((data ?? []) as DurableEvidenceRow[]).flatMap((row) => {
+    const item = Array.isArray(row.items) ? row.items[0] : row.items;
+    if (!item || (row.context !== "diagnostic" && row.context !== "practice")) return [];
+    return [{
+      id: row.id,
+      itemId: row.item_id,
+      prompt: item.prompt,
+      ...(item.visual_spec ? { visualSpec: item.visual_spec } : {}),
+      answerRaw: row.answer_raw,
+      isCorrect: row.is_correct,
+      context: row.context,
+      submittedAt: row.submitted_at,
+      subskillId: item.subskill_id,
+    } satisfies TeacherAttemptEvidence & { subskillId: string }];
+  });
+  return { studentId, attemptsBySubskill: teacherEvidenceBySubskill(attempts) };
+}
+
+async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Promise<Record<string, TeacherStudentEvidence["attemptsBySubskill"]>> {
+  const uniqueStudentIds = [...new Set(studentIds)];
+  if (!uniqueStudentIds.length) return {};
+  const client = configuredClient();
+  if (!client) {
+    return Object.fromEntries(uniqueStudentIds.map((studentId) => [
+      studentId,
+      teacherEvidenceBySubskill(getDemoStudentResponseEvidence(studentId)),
+    ]));
+  }
+  const { data, error } = await client
+    .from("student_responses")
+    .select("id, student_id, item_id, answer_raw, is_correct, context, submitted_at, items!inner(subskill_id, prompt, visual_spec)")
+    .in("student_id", uniqueStudentIds)
+    .in("context", ["diagnostic", "practice"])
+    .order("submitted_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) throw new Error(`Could not load teacher response evidence: ${error.message}`);
+  const grouped = Object.fromEntries(uniqueStudentIds.map((studentId) => [studentId, {} as TeacherStudentEvidence["attemptsBySubskill"]]));
+  for (const raw of (data ?? []) as Array<DurableEvidenceRow & { student_id: string }>) {
+    const item = Array.isArray(raw.items) ? raw.items[0] : raw.items;
+    if (!item || (raw.context !== "diagnostic" && raw.context !== "practice")) continue;
+    const bySkill = grouped[raw.student_id];
+    if (!bySkill) continue; // defense in depth: never project another student's evidence.
+    (bySkill[item.subskill_id] ??= []).push({
+      id: raw.id, itemId: raw.item_id, prompt: item.prompt,
+      ...(item.visual_spec ? { visualSpec: item.visual_spec } : {}),
+      answerRaw: raw.answer_raw, isCorrect: raw.is_correct,
+      context: raw.context, submittedAt: raw.submitted_at,
+    });
+  }
+  return grouped;
 }
 
 /**
@@ -21,7 +121,15 @@ function getLocalTeacherDashboardWithParticipants() {
   const base = getDemoTeacherDashboard();
   if (!base) return null;
   const participants = getLocalDemoParticipants();
-  if (!participants.length) return base;
+  if (!participants.length) {
+    return {
+      ...base,
+      responseEvidenceByStudent: Object.fromEntries(base.students.map((student) => [
+        student.id,
+        teacherEvidenceBySubskill(getDemoStudentResponseEvidence(student.id)),
+      ])),
+    };
+  }
 
   const participantStudents = participants.map((participant) => ({
     id: participant.studentId,
@@ -42,6 +150,10 @@ function getLocalTeacherDashboardWithParticipants() {
     students: [...base.students, ...participantStudents],
     cells,
     groups: groupStudentsByNeed(cells),
+    responseEvidenceByStudent: Object.fromEntries([...base.students, ...participantStudents].map((student) => [
+      student.id,
+      teacherEvidenceBySubskill(getDemoStudentResponseEvidence(student.id)),
+    ])),
   };
 }
 
@@ -49,19 +161,29 @@ export async function getTeacherDashboard(classId: string = canonicalDemoIds.cla
   const client = configuredClient();
   if (!client) return getLocalTeacherDashboardWithParticipants();
   const { data: rows, error } = await client.from("class_mastery_heatmap").select("student_id, subskill_id, level, evidence_summary").eq("class_id", classId);
-  if (error || !rows?.length) return getLocalTeacherDashboardWithParticipants();
+  // A configured database is authoritative. Falling back here would make an
+  // outage look like a valid class with stale demo data, which is especially
+  // misleading for a teacher reviewing a learner who just completed work.
+  if (error) throw new Error(`Could not load teacher dashboard: ${error.message}`);
+  if (!rows?.length) return null;
   const cells = normalizeHeatmapRows(rows as HeatmapQueryRow[]);
-  const [{ data: students }, { data: subskills }] = await Promise.all([
+  const [{ data: students, error: studentsError }, { data: subskills, error: subskillsError }] = await Promise.all([
     client.from("students").select("id, display_name, grade_band").in("id", [...new Set(cells.map((cell) => cell.studentId))]),
     client.from("subskills").select("id, name").in("id", [...new Set(cells.map((cell) => cell.subskillId))]),
   ]);
-  if (!students || !subskills) return getLocalTeacherDashboardWithParticipants();
+  if (studentsError) throw new Error(`Could not load teacher dashboard students: ${studentsError.message}`);
+  if (subskillsError) throw new Error(`Could not load teacher dashboard subskills: ${subskillsError.message}`);
+  if (!students || !subskills) throw new Error("Could not load complete teacher dashboard data.");
+  const dashboardStudents = students.map((student) => ({ id: student.id, displayName: student.display_name, gradeBand: student.grade_band }));
   return {
     classId,
-    students: students.map((student) => ({ id: student.id, displayName: student.display_name, gradeBand: student.grade_band })),
+    students: dashboardStudents,
     subskills: subskills.map((subskill) => ({ id: subskill.id, name: subskill.name })),
     cells,
     groups: groupStudentsByNeed(cells),
+    // Scope the evidence query to the students already returned by this class
+    // dashboard. It cannot introduce an answer from an unrelated student.
+    responseEvidenceByStudent: await getTeacherEvidenceByStudentIds(dashboardStudents.map((student) => student.id)),
   };
 }
 
