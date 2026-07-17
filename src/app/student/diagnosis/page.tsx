@@ -66,19 +66,30 @@ function DiagnosisContent() {
 
           <div className="mx-auto w-full max-w-3xl">
             {!result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Building your focused practice…"}</p></Card>}
-            {result && (
-              <div className="space-y-4">
-                <Card className="animate-rise p-6"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{result.diagnosis.observation}</p><p className="mt-2 text-ink-muted">{result.diagnosis.explanation}</p></Card>
+            {result && (() => {
+              const practicePlans = result.practicePlans?.length
+                ? result.practicePlans
+                : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }];
+              const hasMultiplePlans = practicePlans.length > 1;
+              const observation = hasMultiplePlans
+                ? "Your answers show that these skills are the next useful steps."
+                : "Your answers show that this skill is the next useful step.";
+              const nextStep = hasMultiplePlans
+                ? "Start the focused practice sets."
+                : "Start the focused practice set.";
+
+              return <div className="space-y-4">
+                <Card className="animate-rise p-6"><Eyebrow className="mb-2">What we noticed</Eyebrow><p className="text-ink">{observation}</p></Card>
                 {/* The next step is the payoff of the whole check-in — a gold margin annotation gives it
                     the "here's your momentum" lift instead of blending into another green panel. */}
-                <div className="animate-rise border-l-2 border-spark pl-4"><p className="text-sm font-semibold text-spark-ink">Next step</p><p className="mt-1 text-lg text-ink">{result.diagnosis.nextStep}</p></div>
-                <div className="grid gap-3">{(result.practicePlans?.length ? result.practicePlans : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }]).map((plan) => {
+                <div className="animate-rise border-l-2 border-spark pl-4"><p className="text-sm font-semibold text-spark-ink">Next step</p><p className="mt-1 text-lg text-ink">{nextStep}</p></div>
+                <div className="grid gap-3">{practicePlans.map((plan) => {
                   const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
                   const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId!)}&completedPlan=${encodeURIComponent(plan.id)}`;
                   return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId!)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
                 })}</div>
-              </div>
-            )}
+              </div>;
+            })()}
           </div>
         </div>
       </section>

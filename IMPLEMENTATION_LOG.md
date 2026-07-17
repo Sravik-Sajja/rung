@@ -558,3 +558,19 @@ Use this template for every meaningful change:
 ### Deployment follow-up
 
 - Run `npm run seed` against Supabase to replace the old `maya-chen` roster row with the current fictional seed dataset. Historical, unused Maya-named source fixtures remain internal fallback/evaluation labels and should be renamed in a separate non-functional cleanup.
+
+## 2026-07-17 — student-flow polish
+
+### Completed
+
+- Simplified the post-diagnostic result screen: removed the redundant prerequisite explanation and made the skill/practice-set copy reflect the number of generated plans.
+- Removed diagnostic hints so support is reserved for targeted practice.
+- Made the student wordmark return to the landing page; `Exit` remains the separate return-to-demo action.
+
+### Validation
+
+- `npx tsc --noEmit` and `git diff --check` passed.
+
+### Follow-up
+
+- Completion currently always creates at least one fallback practice plan; there is not yet an explicit “no practice needed” outcome for a fully correct check-in.

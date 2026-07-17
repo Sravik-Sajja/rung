@@ -22,7 +22,7 @@ export function AppShell({
             inside of, so it must not move. A stable wide bar also stops the contents huddling in a
             narrow column while the bar's own background spans the whole viewport. */}
         <div className="mx-auto flex max-w-wide items-center justify-between px-6 py-3.5">
-          <Link href="/demo" className="shrink-0">
+          <Link href="/" className="shrink-0">
             <RungWordmark />
           </Link>
           <nav className="flex shrink-0 items-center gap-1 text-sm">

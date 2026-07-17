@@ -32,7 +32,9 @@ export function StudentShell({
           bg-bg canvas reads as a distinct plane underneath it, not one flat wash. */}
       <header className="border-b border-border bg-surface shadow-sm">
         <div className={cn(container, "flex items-center justify-between gap-4 py-3")}>
-          <RungWordmark size="sm" />
+          <Link href="/" className="shrink-0" aria-label="Rung home">
+            <RungWordmark size="sm" />
+          </Link>
           <div className="flex items-center gap-3">
             {aside}
             <ThemeToggle />

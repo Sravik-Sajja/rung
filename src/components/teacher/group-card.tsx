@@ -28,7 +28,7 @@ export function GroupCard({
       </p>
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
         <Link className={buttonClasses("focus", "sm")} href={`/teacher/groups/${group.id}`}>
-          Start mini-lesson
+          Mini Lesson
         </Link>
         {onAssignFollowUp ? (
           <button className={buttonClasses("secondary", "sm")} onClick={onAssignFollowUp} type="button">

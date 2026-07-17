@@ -14,18 +14,6 @@ import type { ItemVisualSpec } from "@/lib/types";
 type DiagnosticItem = { id: string; prompt: string; subskillId: string; visualSpec?: ItemVisualSpec; position: number };
 type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: DiagnosticItem[] };
 
-// One short hint per subskill. Kept intentionally light — a nudge toward the method, never the
-// answer — since a diagnostic measures where the student is, and any hint they lean on flags that
-// subskill for extra reps in the follow-up practice set.
-const hintsBySubskill: Record<string, string> = {
-  "equivalent-fractions": "Multiply the top and bottom by the same number: the value stays the same.",
-  "fraction-number-line": "Split the line from 0 to 1 into equal parts that match the denominator, then count up.",
-  "find-common-denominator": "Look for a number that both denominators divide into evenly.",
-  "add-unlike-denominators": "Rewrite both fractions over a common denominator first, then add just the numerators.",
-  "subtract-unlike-denominators": "Rewrite both fractions over a common denominator first, then subtract just the numerators.",
-};
-const fallbackHint = "Think about what the denominators are telling you before you combine the fractions.";
-
 // The external action button submits the FractionInput's form via the `form` attribute, so
 // Check and Next can morph in one fixed position at the bottom of the card.
 const ANSWER_FORM_ID = "diagnostic-answer-form";
@@ -68,9 +56,6 @@ function DiagnosticContent() {
   const [recorded, setRecorded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Item ids the student revealed a hint on — sent with the answer so completion can add extra
-  // practice for those subskills. Persists across questions; the current item's flag is derived below.
-  const [hintedItems, setHintedItems] = useState<Set<string>>(new Set());
   const answerRef = useRef<FractionInputHandle>(null);
 
   useEffect(() => {
@@ -87,14 +72,6 @@ function DiagnosticContent() {
   const item = diagnostic?.items[index];
   const total = diagnostic?.items.length ?? 0;
   const isLastItem = Boolean(diagnostic && index === total - 1);
-  const hintUsed = Boolean(item && hintedItems.has(item.id));
-  const hintText = item ? hintsBySubskill[item.subskillId] ?? fallbackHint : "";
-
-  function revealHint() {
-    if (!item) return;
-    setHintedItems((current) => new Set(current).add(item.id));
-  }
-
   async function handleSubmit(answer: string) {
     if (!diagnostic || !item || submitting) return;
     setError(null);
@@ -103,7 +80,7 @@ function DiagnosticContent() {
       const response = await fetch("/api/responses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic", usedHint: hintedItems.has(item.id) }),
+        body: JSON.stringify({ studentId, diagnosticSessionId: diagnostic.diagnosticSessionId, itemId: item.id, answer, context: "diagnostic" }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -188,17 +165,15 @@ function DiagnosticContent() {
                   fills a rung gold as you climb — the metaphor made visible on screen. */}
               <RungProgress current={index + 1} total={total} label="Question" />
 
-              {/* One elevated card is the single focal point. Top-to-bottom reading order only:
-                  question, answer, help, action — no horizontal eye travel. */}
+              {/* One elevated card is the single focal point: question, answer, then action. */}
               <div key={item.id} className="animate-rise rounded-2xl border border-border bg-elevated shadow-lg">
                 {/* Question zone */}
                 <div className="flex flex-col items-center justify-center gap-6 p-8 text-center sm:p-10 2xl:p-14">
                   <FractionExpression text={item.prompt} size="lg" className="justify-center 2xl:text-4xl" />
                   {item.visualSpec?.kind === "number_line" && <NumberLineQuestion visualSpec={item.visualSpec} />}
                 </div>
-                {/* Answer zone: inputs mirror the stacked fraction in the prompt, the hint stays a
-                    quiet text affordance until asked for, and one primary button holds the bottom
-                    slot — Save morphs into Next in place once the answer is recorded. The label is
+                {/* Answer zone: inputs mirror the stacked fraction in the prompt and one primary
+                    button holds the bottom slot — Save morphs into Next in place once recorded. The label is
                     "Save answer", not "Check": a diagnostic records the answer and never reveals
                     correctness, so promising a check would be a lie. Practice, which does score
                     immediately, keeps its own "Check" button. */}
@@ -214,30 +189,6 @@ function DiagnosticContent() {
                     className="items-center text-center"
                     defaultMode={answerModeForSubskill(item.subskillId)}
                   />
-
-                  {hintUsed ? (
-                    // Blue is the support signal in this system (green stays "correct"). The note
-                    // flags the consequence honestly: this kind of question comes back afterward.
-                    // A margin annotation, not an alert box: a thin blue rail carries the hint
-                    // instead of a tinted, bordered panel. -mt-3 pulls this up against the
-                    // answer-mode toggle inside FractionInput so the two quiet-link affordances
-                    // read as one grouped cluster, without touching the gap-6 the parent column
-                    // keeps below (toward the feedback/action region).
-                    <div className="animate-rise -mt-3 w-full border-l-2 border-focus pl-4 text-left">
-                      <p className="text-sm font-semibold text-focus">Hint</p>
-                      <p className="mt-1 text-ink">{hintText}</p>
-                      <p className="mt-2 text-sm text-ink-muted">You&rsquo;ll get extra practice on this kind of question.</p>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={revealHint}
-                      disabled={recorded}
-                      className="-mt-3 text-sm font-medium text-focus underline-offset-4 hover:underline disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      Stuck? Show a hint
-                    </button>
-                  )}
 
                   <div aria-live="polite" className="flex w-full flex-col items-center gap-3 empty:hidden">
                     {recorded && (
