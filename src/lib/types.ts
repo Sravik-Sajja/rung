@@ -56,9 +56,16 @@ export interface VettedVideo { title: string; provider: string; url: string; ver
 export interface TeacherGroupPlan { groupId: string; objective: string; durationMinutes: number; materials: string[]; steps: LessonStep[]; checkForUnderstanding: string; practiceItemIds: string[]; video: VettedVideo; }
 
 /**
- * The deliberately narrow response record a teacher may review. It contains
- * the learner's submitted answer and the question they saw, but never the
- * answer key, diagnosis, hint/work-help content, or peer material.
+ * The narrow response record a teacher may review: the learner's submitted answer,
+ * the question they saw, and what scoring accepts for it. It still never carries the
+ * distractor map, diagnosis text, hint/work-help content, or peer material.
+ *
+ * `correctAnswer` IS an answer key, so this record is no longer safe to hand to a
+ * learner surface. Today the only consumer is the teacher dashboard — but that route
+ * is unauthenticated and AppShell links to it from the student nav, so a learner in
+ * DEMO_MODE can reach it in one click. Gate /teacher behind real auth before any live
+ * classroom use; see migration 004, which keeps answer_spec away from learners at the
+ * database layer for exactly this reason.
  */
 export interface TeacherAttemptEvidence {
   id: string;
@@ -66,6 +73,7 @@ export interface TeacherAttemptEvidence {
   prompt: string;
   visualSpec?: ItemVisualSpec;
   answerRaw: string;
+  correctAnswer: string;
   isCorrect: boolean;
   context: "diagnostic" | "practice";
   submittedAt: string;

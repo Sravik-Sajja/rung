@@ -7,7 +7,9 @@ import type { MasteryLevel } from "../types";
 export const canonicalDemoIds = {
   classId: "fractions-demo-class",
   teacherName: "Ms. Rivera",
-  mayaStudentId: "maya-chen",
+  // Legacy property name retained temporarily for fixture compatibility; this
+  // is now only an ordinary fictional teacher-roster record, never a route fallback.
+  mayaStudentId: "riley-johnson",
   fractionsTopicId: "fractions-rational-operations",
   commonDenominatorSubskillId: "find-common-denominator",
   diagnosticAssignmentId: "fractions-diagnostic-v1",
@@ -21,7 +23,7 @@ export const masteryLevels = [
 ] as const satisfies readonly MasteryLevel[];
 
 export const canonicalDemoStudents = [
-  { id: canonicalDemoIds.mayaStudentId, displayName: "Maya Chen", isDemoDefault: true },
+  { id: canonicalDemoIds.mayaStudentId, displayName: "Riley Johnson", isDemoDefault: false },
   { id: "diego-alvarez", displayName: "Diego Alvarez" },
   { id: "zara-williams", displayName: "Zara Williams" },
   { id: "noah-brooks", displayName: "Noah Brooks" },

@@ -28,7 +28,7 @@ export type Actor =
 - A student request carrying `studentId` is valid only when it equals `Actor.studentId`; new production clients should omit it where the route can derive it.
 - Teachers may access only classes they teach and plans/snapshots created for those classes.
 - The Supabase service role is never used in browser code and is not a substitute for a user session in normal routes.
-- `DEMO_MODE` is disabled in production. In non-production, a server-created temporary participant is bound to an opaque httpOnly cookie and may access only that learner's records; an explicitly allow-listed fictional seed identity (including Maya) remains a prepared fallback. A URL/body `studentId` is a consistency assertion, never the source of identity.
+- `DEMO_MODE` is disabled in production. In non-production, a server-created temporary participant is bound to an opaque httpOnly cookie and may access only that learner's records. Seeded roster identities are never active learners. A URL/body `studentId` is a consistency assertion, never the source of identity.
 
 ### Temporary walkthrough participant
 

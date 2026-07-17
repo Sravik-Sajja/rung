@@ -59,7 +59,7 @@ function DiagnosticContent() {
   const searchParams = useSearchParams();
   // The server still verifies this against the opaque demo cookie; the query
   // merely preserves the selected learner across the visible walkthrough.
-  const studentId = searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
+  const studentId = searchParams.get("studentId");
   const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
   // The framing copy earns its display size exactly once — as an intro step — instead of sitting
   // beside every question as a permanent second focal point.
@@ -74,11 +74,15 @@ function DiagnosticContent() {
   const answerRef = useRef<FractionInputHandle>(null);
 
   useEffect(() => {
+    if (!studentId) {
+      router.replace("/demo");
+      return;
+    }
     fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}?studentId=${encodeURIComponent(studentId)}`)
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
       .then(setDiagnostic)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not start diagnostic"));
-  }, [studentId]);
+  }, [router, studentId]);
 
   const item = diagnostic?.items[index];
   const total = diagnostic?.items.length ?? 0;
@@ -117,7 +121,7 @@ function DiagnosticContent() {
   function handleNext() {
     if (!diagnostic) return;
     if (isLastItem) {
-      router.push(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId)}`);
+      router.push(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId!)}`);
       return;
     }
     setIndex((current) => current + 1);

@@ -37,7 +37,7 @@ The default local walkthrough works without Supabase: it uses a process-local te
 1. On `/demo`, enter a first name or nickname. The server creates a fictional temporary learner and binds it to an opaque httpOnly cookie; the URL's learner ID is only checked for consistency.
 2. Complete the diagnostic and choose a generated, validated practice plan. Durable plan ordering is explicit, so retries return the same prerequisite-first order.
 3. Answers are deterministically scored. Work-based help is available only after the server records: miss → `hint` or `guided_step` → later miss. A photo is optional, is processed only in request memory, and is never stored.
-4. Move to the teacher dashboard to see the temporary learner's stored mastery evidence alongside the seeded fictional class. Maya remains a secondary prepared walkthrough for recovery and rehearsal.
+4. Move to the teacher dashboard to see the temporary learner's stored mastery evidence alongside the seeded fictional class. Every student walkthrough starts with a new temporary learner.
 
 ## Known deployment limits
 

@@ -13,7 +13,7 @@ import {
 describe("partner demo contracts", () => {
   it("publishes stable IDs for the seed and teacher dashboard", () => {
     expect(canonicalDemoIds.classId).toBe("fractions-demo-class");
-    expect(canonicalDemoIds.mayaStudentId).toBe("maya-chen");
+    expect(canonicalDemoIds.mayaStudentId).toBe("riley-johnson");
     expect(canonicalDemoIds.commonDenominatorSubskillId).toBe("find-common-denominator");
   });
 

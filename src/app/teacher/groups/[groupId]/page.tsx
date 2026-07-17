@@ -7,14 +7,23 @@ import { PracticeSetCard } from "@/components/teacher/practice-set";
 import { VideoRecommendationCard } from "@/components/teacher/video-recommendation";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { demoItems } from "@/lib/demo-data";
-import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan } from "@/lib/teacher/grouping";
+import { getDemoTeacherGroupPlan } from "@/lib/teacher/grouping";
+import { getTeacherDashboard } from "@/lib/teacher/repository";
 import { runtimeAiAdapter } from "@/lib/ai/adapter";
 import { teacherLessonDurationMinutes } from "@/lib/ai/contracts";
 
+// Matches the dashboard: a temporary participant who earns a shared gap joins the group
+// as soon as their evidence lands, so this page must never render a cached roster.
+export const dynamic = "force-dynamic";
+
 export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
-  const group = getDemoTeacherGroup(groupId);
-  const dashboard = getDemoTeacherDashboard();
+  // Read the group from the same projection the dashboard uses, not from the seed. The
+  // seeded groups list only the fictional class, so a temporary participant that
+  // groupStudentsByNeed puts in this cohort would be recommended on the dashboard and
+  // then silently missing here.
+  const dashboard = await getTeacherDashboard();
+  const group = dashboard?.groups.find(({ id }) => id === groupId) ?? null;
   const seededPlan = getDemoTeacherGroupPlan(groupId);
   if (!group || !dashboard || !seededPlan) notFound();
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireStudentActor } from "@/lib/auth/actor";
-import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { getDemoPractice } from "@/lib/student/demo-learning-store";
 import { getPersistedPractice } from "@/lib/student/learning-service";
 
 export async function GET(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const studentId = new URL(request.url).searchParams.get("studentId") ?? canonicalDemoIds.mayaStudentId;
+  const studentId = new URL(request.url).searchParams.get("studentId");
+  if (!studentId) return NextResponse.json({ error: "Start your climb before opening practice." }, { status: 400 });
 
   try {
     const actor = await requireStudentActor(request, studentId);

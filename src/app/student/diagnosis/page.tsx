@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { Card, Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
@@ -17,12 +17,17 @@ function DiagnosisContent() {
   const params = useSearchParams();
   const diagnosticSessionId = params.get("diagnosticSessionId");
   const completedPlanId = params.get("completedPlan");
-  const studentId = params.get("studentId") ?? canonicalDemoIds.mayaStudentId;
+  const studentId = params.get("studentId");
+  const router = useRouter();
   const [result, setResult] = useState<CompletedDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completedPlanIds, setCompletedPlanIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    if (!studentId) {
+      router.replace("/demo");
+      return;
+    }
     if (!diagnosticSessionId) {
       setError("Complete the diagnostic before viewing your next step.");
       return;
@@ -34,9 +39,10 @@ function DiagnosisContent() {
     }).then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
       .then(setResult)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not create practice"));
-  }, [diagnosticSessionId, studentId]);
+  }, [diagnosticSessionId, router, studentId]);
 
   useEffect(() => {
+    if (!studentId) return;
     if (!result?.practicePlans?.length) return;
     Promise.all(result.practicePlans.map(async (plan) => {
       const response = await fetch(`/api/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}`);
@@ -68,8 +74,8 @@ function DiagnosisContent() {
                 <div className="animate-rise border-l-2 border-spark pl-4"><p className="text-sm font-semibold text-spark-ink">Next step</p><p className="mt-1 text-lg text-ink">{result.diagnosis.nextStep}</p></div>
                 <div className="grid gap-3">{(result.practicePlans?.length ? result.practicePlans : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }]).map((plan) => {
                   const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
-                  const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId)}&completedPlan=${encodeURIComponent(plan.id)}`;
-                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
+                  const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId!)}&completedPlan=${encodeURIComponent(plan.id)}`;
+                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><p className="font-semibold capitalize text-ink">{plan.title}</p>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId!)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
                 })}</div>
               </div>
             )}

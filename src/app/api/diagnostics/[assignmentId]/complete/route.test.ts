@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/diagnostics/[assignmentId]/complete/route";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
+import { createDemoParticipant, DEMO_PARTICIPANT_COOKIE, resetDemoParticipantStore } from "@/lib/demo/participant";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import { getDemoPractice, recordDemoDiagnosticResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import type { Item } from "@/lib/types";
@@ -16,20 +17,23 @@ describe("POST /api/diagnostics/:assignmentId/complete", () => {
   beforeEach(() => {
     process.env.DEMO_MODE = "true";
     resetDemoLearningStore();
+    resetDemoParticipantStore();
   });
 
   afterEach(() => {
     resetDemoLearningStore();
+    resetDemoParticipantStore();
     if (previousDemoMode === undefined) delete process.env.DEMO_MODE;
     else process.env.DEMO_MODE = previousDemoMode;
   });
 
   it("replaces the seeded practice selection with the validated generated plan", async () => {
-    const diagnostic = startDemoDiagnostic(canonicalDemoIds.mayaStudentId);
-    for (const item of buildDiagnosticItems(canonicalDemoIds.mayaStudentId)) {
+    const participant = await createDemoParticipant({ displayName: "Route test" });
+    const diagnostic = startDemoDiagnostic(participant.studentId);
+    for (const item of buildDiagnosticItems(participant.studentId)) {
       recordDemoDiagnosticResponse({
         diagnosticSessionId: diagnostic.diagnosticSessionId,
-        studentId: canonicalDemoIds.mayaStudentId,
+        studentId: participant.studentId,
         itemId: item.id,
         answer: answerFor(item, "common-denominator-1"),
       });
@@ -38,8 +42,8 @@ describe("POST /api/diagnostics/:assignmentId/complete", () => {
     const response = await POST(
       new Request("http://localhost/api/diagnostics/diagnostic-fractions/complete", {
         method: "POST",
-        body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId: diagnostic.diagnosticSessionId }),
-        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: participant.studentId, diagnosticSessionId: diagnostic.diagnosticSessionId }),
+        headers: { "Content-Type": "application/json", cookie: `${DEMO_PARTICIPANT_COOKIE}=${participant.sessionToken}` },
       }),
       { params: Promise.resolve({ assignmentId: canonicalDemoIds.diagnosticAssignmentId }) },
     );
@@ -49,7 +53,7 @@ describe("POST /api/diagnostics/:assignmentId/complete", () => {
       practiceSession: { id: string; firstItemId: string; itemCount: number };
       practicePlans: Array<{ id: string; itemCount: number }>;
     };
-    const practice = getDemoPractice(completed.practiceSession.id, canonicalDemoIds.mayaStudentId)!;
+    const practice = getDemoPractice(completed.practiceSession.id, participant.studentId)!;
     expect(completed.practiceSession.itemCount).toBeGreaterThanOrEqual(3);
     expect(completed.practiceSession.firstItemId).toBe(practice.items[0].itemId);
     expect(completed.practiceSession.firstItemId).not.toBe(completed.practicePlans[0].id);
@@ -60,8 +64,8 @@ describe("POST /api/diagnostics/:assignmentId/complete", () => {
     const retry = await POST(
       new Request("http://localhost/api/diagnostics/diagnostic-fractions/complete", {
         method: "POST",
-        body: JSON.stringify({ studentId: canonicalDemoIds.mayaStudentId, diagnosticSessionId: diagnostic.diagnosticSessionId }),
-        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: participant.studentId, diagnosticSessionId: diagnostic.diagnosticSessionId }),
+        headers: { "Content-Type": "application/json", cookie: `${DEMO_PARTICIPANT_COOKIE}=${participant.sessionToken}` },
       }),
       { params: Promise.resolve({ assignmentId: canonicalDemoIds.diagnosticAssignmentId }) },
     );

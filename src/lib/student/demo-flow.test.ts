@@ -19,7 +19,7 @@ describe("student demo flow", () => {
   });
 
   it("recovers the canonical seeded practice session when route handlers do not share local memory", () => {
-    const session = getLocalPracticeSession("practice-maya-chen-common-denominator", maya);
+    const session = getLocalPracticeSession(`practice-${maya}-common-denominator`, maya);
     expect(session?.session.currentItemId).toBe("common-denominator-1");
   });
 

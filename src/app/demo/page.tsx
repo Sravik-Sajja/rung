@@ -1,9 +1,7 @@
-// Demo entry screen for selecting a seeded role and starting Maya's walkthrough.
-import Link from "next/link";
+// Demo entry screen for starting a cookie-bound temporary learner walkthrough.
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { StartClimbForm } from "@/components/demo/start-climb-form";
-import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui";
-import { demoStudents } from "@/lib/demo-data";
+import { Badge, Card, Eyebrow } from "@/components/ui";
 
 // Decorative ladder rungs for the side margins on very wide screens — mirrors the diagnostic
 // intro's motif so this "step zero" screen feels like the same composition. Purely visual —
@@ -30,8 +28,6 @@ function RungMotif({ side }: { side: "left" | "right" }) {
 }
 
 export default function DemoPage() {
-  const maya = demoStudents[0]!;
-
   return (
     <StudentShell exitHref="/" size="wide">
       {/* One centered composition — headline above, the Maya card as the single lit focal
@@ -64,12 +60,6 @@ export default function DemoPage() {
               student route begins. The existing visual treatment stays intact. */}
           <Card className="animate-rise mt-10 flex flex-col items-center gap-5 rounded-2xl border-border-strong bg-elevated p-8 text-center shadow-lg">
             <StartClimbForm />
-            <div className="w-full border-t border-border pt-4">
-              <p className="text-sm text-ink-muted">Need the prepared rehearsal instead?</p>
-              <Link href={`/student/diagnostic?studentId=${encodeURIComponent(maya.id)}`} className={buttonClasses("secondary", "md", "mt-3")}>
-                View the prepared Maya walkthrough
-              </Link>
-            </div>
           </Card>
 
           <div className="mt-8 text-center">

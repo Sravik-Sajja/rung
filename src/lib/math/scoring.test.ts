@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreAnswer } from "@/lib/math/scoring";
+import { describeAcceptedAnswer, scoreAnswer } from "@/lib/math/scoring";
 import type { Item } from "@/lib/types";
 
 describe("structured and legacy common-denominator scoring", () => {
@@ -84,5 +84,54 @@ describe("exact_denominator scoring", () => {
     expect(scoreAnswer(additionItem, "7/12")).toBe(true);
     expect(scoreAnswer(additionItem, "14/24")).toBe(true);
     expect(scoreAnswer(additionItem, "2/7")).toBe(false);
+  });
+});
+
+describe("describeAcceptedAnswer", () => {
+  const item = (overrides: Partial<Item>): Item => ({
+    id: "item",
+    subskillId: "add-unlike-denominators",
+    prompt: "What is 1/4 + 2/5?",
+    answerSpec: { accepted: ["13/20"] },
+    distractorMap: {},
+    ...overrides,
+  });
+
+  it("names the single accepted answer", () => {
+    expect(describeAcceptedAnswer(item({}))).toBe("13/20");
+  });
+
+  it("says a common-denominator item takes any common multiple, not just the least", () => {
+    const described = describeAcceptedAnswer(item({
+      prompt: "Name any shared denominator.",
+      answerSpec: { accepted: ["30"], rule: { kind: "positive_common_multiple", denominators: [5, 6] } },
+    }));
+    // A teacher who reads only "30" would mark a correct 60 as wrong — the scorer accepts it.
+    expect(described).toContain("30");
+    expect(described).toContain("any common multiple of 5 and 6");
+  });
+
+  it("describes legacy prompt-sniffed common-denominator rows the same way the scorer reads them", () => {
+    const legacy = item({
+      prompt: "What common denominator can you use for 1/3 and 1/4?",
+      answerSpec: { accepted: ["12"] },
+    });
+    expect(describeAcceptedAnswer(legacy)).toContain("any common multiple of 3 and 4");
+    expect(scoreAnswer(legacy, "24")).toBe(true); // the description must not contradict this
+  });
+
+  it("stays honest instead of throwing when a durable row has no usable answer spec", () => {
+    // A missing spec must not take the teacher dashboard down, and must not render blank
+    // (which a teacher would read as "this item has no correct answer").
+    expect(describeAcceptedAnswer({ prompt: "What is 1/4 + 2/5?" })).toBe("Not recorded for this item.");
+    expect(describeAcceptedAnswer({ prompt: "x", answerSpec: null })).toBe("Not recorded for this item.");
+    expect(describeAcceptedAnswer({ prompt: "x", answerSpec: { accepted: [] } })).toBe("Not recorded for this item.");
+  });
+
+  it("names the required written form for an exact-denominator item", () => {
+    expect(describeAcceptedAnswer(item({
+      prompt: "Write a fraction equivalent to 1/2 with denominator 8.",
+      answerSpec: { accepted: ["4/8"], rule: { kind: "exact_denominator", denominator: 8 } },
+    }))).toBe("4/8");
   });
 });

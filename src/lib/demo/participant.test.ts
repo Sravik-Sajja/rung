@@ -73,13 +73,13 @@ describe("temporary demo participants", () => {
       identity: "temporary_participant",
       store: "local_demo",
     }));
-    await expect(requireStudentActor(request, "maya-chen")).rejects.toThrow("belongs to another learner");
+    await expect(requireStudentActor(request, "riley-johnson")).rejects.toThrow("belongs to another learner");
 
-    // Maya remains an explicit no-cookie fallback; an arbitrary ID does not.
-    await expect(requireStudentActor(new Request("http://localhost/api/example"), "maya-chen"))
-      .resolves.toEqual(expect.objectContaining({ identity: "maya_fallback" }));
+    // A missing cookie never opens a seeded roster record.
+    await expect(requireStudentActor(new Request("http://localhost/api/example"), "riley-johnson"))
+      .rejects.toThrow("Start your climb");
     await expect(requireStudentActor(new Request("http://localhost/api/example"), "someone-else"))
-      .rejects.toThrow("Unknown demo student");
+      .rejects.toThrow("Start your climb");
   });
 
   it("projects local participant rows and evolving local mastery through the teacher repository", async () => {

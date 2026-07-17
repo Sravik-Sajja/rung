@@ -1,6 +1,6 @@
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { demoItems, demoMastery, demoSubskills } from "@/lib/demo-data";
-import { scoreAnswer } from "@/lib/math/scoring";
+import { describeAcceptedAnswer, scoreAnswer } from "@/lib/math/scoring";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import { materializeGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 import { collectDiagnosticEvidence, nextMasteryLevel, projectDiagnosticMastery, selectDiagnosticGap, selectPracticeItems, shouldRequeue } from "@/lib/student/learning-loop";
@@ -89,6 +89,7 @@ function recordLocalResponseEvidence(input: {
     prompt: input.item.prompt,
     ...(input.item.visualSpec ? { visualSpec: input.item.visualSpec } : {}),
     answerRaw: input.answer.trim(),
+    correctAnswer: describeAcceptedAnswer(input.item),
     isCorrect: input.isCorrect,
     context: input.context,
     submittedAt: input.submittedAt,
@@ -146,7 +147,7 @@ function currentPracticeOccurrence(run: PracticeRun) {
   return run.items.find((entry) => entry.status !== "correct") ?? null;
 }
 
-export function startDemoDiagnostic(studentId: string = canonicalDemoIds.mayaStudentId) {
+export function startDemoDiagnostic(studentId: string) {
   const diagnosticSessionId = createDemoSessionId("diagnostic");
   // Same five skills, same order, same wording for everyone; only the numbers are per student.
   const items = buildDiagnosticItems(studentId);

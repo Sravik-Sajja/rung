@@ -27,7 +27,7 @@ const levelSummary: Record<string, string> = {
 };
 
 const masteryLevels: Record<string, string[]> = {
-  "maya-chen": ["developing", "mastered", "needs_support", "needs_support", "not_started"],
+  [canonicalDemoIds.mayaStudentId]: ["developing", "mastered", "needs_support", "needs_support", "not_started"],
   "diego-alvarez": ["needs_support", "developing", "needs_support", "developing", "not_started"],
   "zara-williams": ["developing", "mastered", "needs_support", "needs_support", "developing"],
   "noah-brooks": ["mastered", "developing", "developing", "developing", "developing"],

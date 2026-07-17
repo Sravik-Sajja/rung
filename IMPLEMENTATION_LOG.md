@@ -539,3 +539,22 @@ Use this template for every meaningful change:
 ### Bugs / follow-ups
 
 - Quick actions are intentionally browser-session UI state for the demo. Add a teacher-assignment persistence contract, recipient delivery path, and audit state before treating them as real classroom assignments or reminders.
+
+## 2026-07-16 - participant-only walkthrough
+
+### Completed
+
+- Removed the prepared Maya walkthrough link and all active student-route/API defaults to a seeded learner.
+- Student work now requires the server-created, cookie-bound temporary participant. Missing, invalid, or expired identity cannot open a seeded student's diagnostic, practice, diagnosis, or mastery state.
+- Replaced the former visible Maya seed record with an ordinary fictional roster learner, Riley Johnson; it has no active-route privilege.
+- Updated route coverage so diagnostic completion uses a real temporary participant cookie rather than a seeded fallback.
+
+### Validation
+
+- `npx tsc --noEmit`: passed.
+- `npm test`: 26 files / 155 tests passed.
+- `git diff --check`: passed.
+
+### Deployment follow-up
+
+- Run `npm run seed` against Supabase to replace the old `maya-chen` roster row with the current fictional seed dataset. Historical, unused Maya-named source fixtures remain internal fallback/evaluation labels and should be renamed in a separate non-functional cleanup.

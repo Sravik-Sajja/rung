@@ -1,14 +1,7 @@
-import { canonicalDemoStudents, canonicalDemoIds } from "@/lib/demo/contracts";
 import { isDemoMode, resolveDemoParticipantSession } from "@/lib/demo/participant";
 import { createServerSessionSupabaseClient } from "@/lib/supabase/server";
 
 export type ActorStore = "local_demo" | "persisted";
-
-function configuredDemoStore(): ActorStore {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? "persisted"
-    : "local_demo";
-}
 
 /**
  * Resolves the selected learner in isolated demo mode, or verifies that an
@@ -33,23 +26,12 @@ export async function requireStudentActor(request: Request, requestedStudentId: 
         displayName: participantSession.participant.displayName,
       };
     }
-    // An expired or malformed session must never fall through to Maya. That
-    // would make a learner appear to have somebody else's progress.
+    // An expired or malformed session must never fall through to a seeded
+    // learner. That would make a visitor appear to have somebody else's work.
     if (participantSession.kind === "expired") throw new Error("Your temporary demo session expired. Start a new climb to continue.");
     if (participantSession.kind === "invalid") throw new Error("Your temporary demo session is not valid. Start a new climb to continue.");
 
-    // The approved Maya fallback remains available when no temporary session
-    // exists. Seeded roster members stay usable for deterministic role demos,
-    // but arbitrary client-provided IDs are rejected.
-    if (!canonicalDemoStudents.some((student) => student.id === requestedStudentId)) throw new Error("Unknown demo student.");
-    return {
-      studentId: requestedStudentId,
-      mode: "demo" as const,
-      // Seeded demo IDs can use the durable flow when Supabase is configured;
-      // local development remains fully runnable without credentials.
-      store: configuredDemoStore(),
-      identity: requestedStudentId === canonicalDemoIds.mayaStudentId ? "maya_fallback" as const : "seeded_demo" as const,
-    };
+    throw new Error("Start your climb before accessing learner work.");
   }
   const authorization = request.headers.get("authorization");
   const accessToken = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : null;

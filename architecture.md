@@ -78,7 +78,7 @@ The journey maps to a <3-minute script with the timing budget and AI-narration h
 
 | Beat | Time | On screen | Narration hook |
 | --- | --- | --- | --- |
-| 1. A visitor starts a temporary non-production learner with a first name or nickname, then completes a five-question fixed fractions diagnostic. Maya remains the prepared fallback walkthrough. | ~40s | Name entry, then diagnostic one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
+| 1. A visitor starts a temporary non-production learner with a first name or nickname, then completes a five-question fixed fractions diagnostic. There is no seeded-student fallback walkthrough. | ~40s | Name entry, then diagnostic one item at a time | Codex scaffolded the diagnostic flow, schema, and deterministic scorer |
 | 2. The system reports a specific finding from the visitor's selected wrong answers, not simply that they missed a question. | (in ~40s) | Diagnosis screen | Deterministic rules select the supported tag; GPT-5.6 renders it in student-friendly language (§8) |
 | 3. The visitor receives prerequisite practice and uses the tutor's nudge → hint → guided-step ladder on a hard item without being handed the answer. | ~40s | Practice + hint ladder | GPT-5.6 generates Socratic laddered hints; leak check keeps the answer hidden |
 | 4. After the server records miss → `hint`/`guided_step` → later miss, the visitor uses **Show your work**: they type what they tried and may add a photo. Rung returns one observation, one next step, and one check question without telling them whether they are correct. | ~30s | Work-based help card | GPT-5.6 Luna reads only the request in memory; server leak checks keep the answer hidden and deterministic scoring remains authoritative |

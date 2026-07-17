@@ -1,11 +1,17 @@
 // Deterministic fraction normalization and answer scoring; AI never decides correctness.
-import type { Item } from "@/lib/types";
+import type { AnswerSpec, Item } from "@/lib/types";
 import { areEquivalentRationals } from "@/lib/math/rational";
 
 export function normalizeFraction(value: string) { return value.trim().replace(/\s/g, ""); }
 
-function positiveCommonMultipleRule(item: Item): readonly [number, number] | null {
-  const rule = item.answerSpec.rule;
+/**
+ * `answerSpec` is optional here only because durable `items` rows are read back from the
+ * database, where a row can arrive without one. Scoring always passes a full Item.
+ */
+type ScorableItem = { prompt: string; answerSpec?: AnswerSpec | null };
+
+function positiveCommonMultipleRule(item: ScorableItem): readonly [number, number] | null {
+  const rule = item.answerSpec?.rule;
   if (rule?.kind === "positive_common_multiple") return rule.denominators;
 
   // Seeded legacy rows predate structured answer rules. Preserve their
@@ -31,6 +37,26 @@ function isPositiveCommonMultiple(value: string, denominators: readonly [number,
 function writtenDenominator(value: string): number | null {
   const match = /^-?\d+\/(\d+)$/.exec(value);
   return match ? Number(match[1]) : null;
+}
+
+/**
+ * A teacher-facing description of what scoring accepts for one item. It reads the same
+ * rules `scoreAnswer` does, so the dashboard can never contradict the result the learner
+ * was actually given. Common-denominator items name the least common multiple but accept
+ * any positive common multiple, so the description has to say so.
+ */
+export function describeAcceptedAnswer(item: ScorableItem): string {
+  const accepted = item.answerSpec?.accepted;
+  // A durable row can come back without a usable spec. Say so rather than throwing (which
+  // would take the whole dashboard down) or rendering blank (which reads as "no answer").
+  if (!accepted?.length) return "Not recorded for this item.";
+
+  const commonDenominators = positiveCommonMultipleRule(item);
+  if (commonDenominators) {
+    const [left, right] = commonDenominators;
+    return `${accepted[0]} — any common multiple of ${left} and ${right} is accepted`;
+  }
+  return accepted.join(" or ");
 }
 
 export function scoreAnswer(item: Item, answer: string) {

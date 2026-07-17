@@ -60,7 +60,12 @@ describe("teacher response evidence projection", () => {
         is_correct: true,
         context: "practice",
         submitted_at: "2026-07-16T12:00:00.000Z",
-        items: { subskill_id: "add-unlike-denominators", prompt: "What is 1/3 + 1/4?", visual_spec: null },
+        items: {
+          subskill_id: "add-unlike-denominators",
+          prompt: "What is 1/3 + 1/4?",
+          answer_spec: { accepted: ["7/12"] },
+          visual_spec: null,
+        },
       }],
       error: null,
     });
@@ -75,13 +80,55 @@ describe("teacher response evidence projection", () => {
       attemptsBySubskill: {
         "add-unlike-denominators": [{
           id: "response-b", itemId: "item-b", prompt: "What is 1/3 + 1/4?",
-          answerRaw: " 7/12 ", isCorrect: true, context: "practice", submittedAt: "2026-07-16T12:00:00.000Z",
+          answerRaw: " 7/12 ", correctAnswer: "7/12",
+          isCorrect: true, context: "practice", submittedAt: "2026-07-16T12:00:00.000Z",
         }],
       },
     });
     expect(byStudent).toHaveBeenCalledWith("student_id", "student-a");
+
+    // answer_spec is now read on purpose: a teacher reviewing a wrong answer needs the key.
+    // It is projected only as the rendered `correctAnswer` string — the raw spec, its rules,
+    // and the distractor map (which names the misconception) still never leave the server.
+    //
+    // This makes the payload answer-bearing, so it is safe ONLY while /teacher is
+    // teacher-only. That route is currently unauthenticated and AppShell links to it from
+    // the student nav; gate it before any live classroom use.
     const selectedFields = (select.mock.calls as unknown as Array<[string]>)[0]?.[0] ?? "";
-    expect(selectedFields).not.toContain("answer_spec");
+    expect(selectedFields).toContain("answer_spec");
     expect(selectedFields).not.toContain("distractor_map");
+    expect(selectedFields).not.toContain("solution_steps");
+  });
+
+  it("projects the accepted answer as a rendered string, never the raw spec or its rules", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-key");
+    const finalOrder = vi.fn().mockResolvedValue({
+      data: [{
+        id: "response-c",
+        item_id: "item-c",
+        answer_raw: "7",
+        is_correct: false,
+        context: "diagnostic",
+        submitted_at: "2026-07-16T12:00:00.000Z",
+        items: {
+          subskill_id: "find-common-denominator",
+          prompt: "Name any shared denominator.",
+          answer_spec: { accepted: ["12"], rule: { kind: "positive_common_multiple", denominators: [3, 4] } },
+          visual_spec: null,
+        },
+      }],
+      error: null,
+    });
+    const select = vi.fn(() => ({ eq: vi.fn(() => ({ in: vi.fn(() => ({ order: vi.fn(() => ({ order: finalOrder })) })) })) }));
+    mocks.createClient.mockReturnValue({ from: vi.fn(() => ({ select })) });
+
+    const evidence = await getTeacherStudentEvidence("student-a");
+    const attempt = evidence.attemptsBySubskill["find-common-denominator"]![0]!;
+    // The scorer accepts any common multiple, so the teacher must be told that — otherwise
+    // they would mark a correct "24" wrong.
+    expect(attempt.correctAnswer).toContain("any common multiple of 3 and 4");
+    expect(attempt).not.toHaveProperty("answerSpec");
+    expect(attempt).not.toHaveProperty("distractorMap");
   });
 });

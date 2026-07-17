@@ -1,6 +1,9 @@
-// Teacher-facing response evidence. This component deliberately accepts a small,
-// sanitized DTO: it can show a submitted response and result, but has no access to
-// answer keys, tutor content, student work-help text, or uploaded files.
+// Teacher-facing response evidence. It accepts a small, sanitized DTO: the submitted
+// response, its result, and the accepted answer for that item — but no distractor map,
+// tutor content, student work-help text, or uploaded files.
+//
+// This renders an answer key, so it must stay behind the teacher route. See the note on
+// TeacherAttemptEvidence: that route is not yet authenticated.
 import { Badge, Card } from "@/components/ui";
 import type { TeacherAttemptEvidence } from "@/lib/types";
 import React from "react";
@@ -70,6 +73,10 @@ export function ResponseEvidence({
                           <dd className="mt-0.5 text-ink">
                             {response.answerRaw.trim() || "No answer submitted."}
                           </dd>
+                        </div>
+                        <div>
+                          <dt className="font-medium text-ink-muted">Correct answer</dt>
+                          <dd className="mt-0.5 text-ink">{response.correctAnswer}</dd>
                         </div>
                       </dl>
                     </li>

@@ -26,7 +26,7 @@ const students = canonicalDemoStudents.map((student) => ({
   id: student.id,
   display_name: student.displayName,
   grade_band: "6-8",
-  is_demo_default: student.id === canonicalDemoIds.mayaStudentId,
+  is_demo_default: false,
 }));
 
 const subskills = [
@@ -56,7 +56,7 @@ const levelSummary: Record<typeof masteryLevels[number], string> = {
 
 // Rows correspond to canonicalDemoSubskillIds. This is the canonical complete 8 x 5 matrix.
 const masteryLevelsByStudent: Record<string, Array<typeof masteryLevels[number]>> = {
-  "maya-chen": ["developing", "mastered", "needs_support", "needs_support", "not_started"],
+  [canonicalDemoIds.mayaStudentId]: ["developing", "mastered", "needs_support", "needs_support", "not_started"],
   "diego-alvarez": ["needs_support", "developing", "needs_support", "developing", "not_started"],
   "zara-williams": ["developing", "mastered", "needs_support", "needs_support", "developing"],
   "noah-brooks": ["mastered", "developing", "developing", "developing", "developing"],

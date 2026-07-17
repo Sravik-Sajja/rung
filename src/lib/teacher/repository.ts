@@ -2,7 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { getLocalDemoParticipants } from "@/lib/demo/participant";
 import { getDemoStudentMastery, getDemoStudentResponseEvidence } from "@/lib/student/demo-learning-store";
-import type { ItemVisualSpec, TeacherAttemptEvidence, TeacherStudentEvidence } from "@/lib/types";
+import { describeAcceptedAnswer } from "@/lib/math/scoring";
+import type { AnswerSpec, ItemVisualSpec, TeacherAttemptEvidence, TeacherStudentEvidence } from "@/lib/types";
 import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan, groupStudentsByNeed } from "@/lib/teacher/grouping";
 import { normalizeHeatmapRows, type HeatmapQueryRow } from "@/lib/teacher/heatmap";
 
@@ -12,6 +13,13 @@ function configuredClient() {
   return url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
 }
 
+type DurableEvidenceItem = {
+  subskill_id: string;
+  prompt: string;
+  answer_spec?: AnswerSpec | null;
+  visual_spec?: ItemVisualSpec | null;
+};
+
 type DurableEvidenceRow = {
   id: string;
   item_id: string;
@@ -19,16 +27,10 @@ type DurableEvidenceRow = {
   is_correct: boolean;
   context: string;
   submitted_at: string;
-  items: {
-    subskill_id: string;
-    prompt: string;
-    visual_spec?: ItemVisualSpec | null;
-  } | Array<{
-    subskill_id: string;
-    prompt: string;
-    visual_spec?: ItemVisualSpec | null;
-  }> | null;
+  items: DurableEvidenceItem | DurableEvidenceItem[] | null;
 };
+
+const EVIDENCE_ITEM_COLUMNS = "items!inner(subskill_id, prompt, answer_spec, visual_spec)";
 
 function teacherEvidenceBySubskill(attempts: readonly (TeacherAttemptEvidence & { subskillId: string })[]): TeacherStudentEvidence["attemptsBySubskill"] {
   const grouped: TeacherStudentEvidence["attemptsBySubskill"] = {};
@@ -52,7 +54,7 @@ export async function getTeacherStudentEvidence(studentId: string): Promise<Teac
 
   const { data, error } = await client
     .from("student_responses")
-    .select("id, item_id, answer_raw, is_correct, context, submitted_at, items!inner(subskill_id, prompt, visual_spec)")
+    .select(`id, item_id, answer_raw, is_correct, context, submitted_at, ${EVIDENCE_ITEM_COLUMNS}`)
     .eq("student_id", studentId)
     .in("context", ["diagnostic", "practice"])
     .order("submitted_at", { ascending: false })
@@ -68,6 +70,7 @@ export async function getTeacherStudentEvidence(studentId: string): Promise<Teac
       prompt: item.prompt,
       ...(item.visual_spec ? { visualSpec: item.visual_spec } : {}),
       answerRaw: row.answer_raw,
+      correctAnswer: describeAcceptedAnswer({ prompt: item.prompt, answerSpec: item.answer_spec }),
       isCorrect: row.is_correct,
       context: row.context,
       submittedAt: row.submitted_at,
@@ -89,7 +92,7 @@ async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Pr
   }
   const { data, error } = await client
     .from("student_responses")
-    .select("id, student_id, item_id, answer_raw, is_correct, context, submitted_at, items!inner(subskill_id, prompt, visual_spec)")
+    .select(`id, student_id, item_id, answer_raw, is_correct, context, submitted_at, ${EVIDENCE_ITEM_COLUMNS}`)
     .in("student_id", uniqueStudentIds)
     .in("context", ["diagnostic", "practice"])
     .order("submitted_at", { ascending: false })
@@ -104,7 +107,9 @@ async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Pr
     (bySkill[item.subskill_id] ??= []).push({
       id: raw.id, itemId: raw.item_id, prompt: item.prompt,
       ...(item.visual_spec ? { visualSpec: item.visual_spec } : {}),
-      answerRaw: raw.answer_raw, isCorrect: raw.is_correct,
+      answerRaw: raw.answer_raw,
+      correctAnswer: describeAcceptedAnswer({ prompt: item.prompt, answerSpec: item.answer_spec }),
+      isCorrect: raw.is_correct,
       context: raw.context, submittedAt: raw.submitted_at,
     });
   }
