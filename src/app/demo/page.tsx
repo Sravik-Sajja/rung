@@ -1,7 +1,7 @@
-// Demo entry screen for starting a cookie-bound temporary learner walkthrough.
+// Entry screen for starting a cookie-bound temporary learner session.
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { StartClimbForm } from "@/components/demo/start-climb-form";
-import { Badge, Card, Eyebrow } from "@/components/ui";
+import { Card } from "@/components/ui";
 
 // Decorative ladder rungs for the side margins on very wide screens — mirrors the diagnostic
 // intro's motif so this "step zero" screen feels like the same composition. Purely visual —
@@ -46,7 +46,6 @@ export default function DemoPage() {
 
         <div className="relative mx-auto w-full max-w-2xl py-8">
           <div className="animate-rise mx-auto max-w-lg text-center">
-            <Eyebrow className="mb-3">Prototype walkthrough</Eyebrow>
             <h1 className="text-balance text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
               Let&rsquo;s find your next climb.
             </h1>
@@ -61,11 +60,6 @@ export default function DemoPage() {
           <Card className="animate-rise mt-10 flex flex-col items-center gap-5 rounded-2xl border-border-strong bg-elevated p-8 text-center shadow-lg">
             <StartClimbForm />
           </Card>
-
-          <div className="mt-8 text-center">
-            <Badge tone="neutral">Temporary walkthrough data</Badge>
-            <p className="mt-2 text-sm text-ink-muted">Your name and progress are visible only for this demo session.</p>
-          </div>
         </div>
       </section>
     </StudentShell>

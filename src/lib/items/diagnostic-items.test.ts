@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DIAGNOSTIC_FORM_COUNT, buildDiagnosticItems } from "@/lib/items/diagnostic-items";
+import { DIAGNOSTIC_FORM_COUNT, buildDiagnosticItems, buildDiagnosticSessionItems } from "@/lib/items/diagnostic-items";
 import { canonicalDemoStudents, canonicalDiagnosticItemIds } from "@/lib/demo/contracts";
 import { scoreAnswer } from "@/lib/math/scoring";
 
@@ -99,6 +99,64 @@ describe("per-student diagnostic items", () => {
     for (const studentId of MANY_STUDENT_IDS) {
       const subskills = buildDiagnosticItems(studentId).map((item) => item.subskillId);
       expect(new Set(subskills).size).toBe(5);
+    }
+  });
+});
+
+describe("per-session diagnostic items", () => {
+  const session = { studentId: "maya-chen", assignmentId: "fractions-diagnostic-v1", diagnosticSessionId: "session-a" };
+
+  it("keeps the canonical slot ids while giving each item a session-scoped id", () => {
+    // The slot is what the heatmap columns and `selectDiagnosticGap` key off, so it
+    // must survive; the item id must not, because these rows go into `items` and a
+    // shared id would mean one learner overwriting another's numbers.
+    const built = buildDiagnosticSessionItems(session);
+    expect(built.map((entry) => entry.slotId)).toEqual([...canonicalDiagnosticItemIds]);
+    expect(built.map((entry) => entry.position)).toEqual([1, 2, 3, 4, 5]);
+    for (const entry of built) {
+      expect(entry.item.id).toBe(`${entry.slotId}--session-a`);
+    }
+  });
+
+  it("mints ids no other session can collide with", () => {
+    const first = buildDiagnosticSessionItems(session).map((entry) => entry.item.id);
+    const second = buildDiagnosticSessionItems({ ...session, diagnosticSessionId: "session-b" }).map((entry) => entry.item.id);
+    expect(new Set([...first, ...second]).size).toBe(10);
+  });
+
+  const promptsOf = (input: Parameters<typeof buildDiagnosticSessionItems>[0]) =>
+    buildDiagnosticSessionItems(input).map((entry) => entry.item.prompt).join("|");
+
+  it("rerolls on the class alone, holding the session fixed", () => {
+    // The bug this path exists to fix: join a second class, get the same five.
+    // Varying the session id too would pass this even if the class never reached
+    // the seed, so the session is pinned and only the assignment moves.
+    const classes = Array.from({ length: 12 }, (_, index) =>
+      promptsOf({ ...session, assignmentId: `assignment-${index}` }));
+    expect(new Set(classes).size).toBeGreaterThan(1);
+  });
+
+  it("rerolls on a new session, holding the class fixed", () => {
+    // The other half: a fresh sitting of the same assignment draws again.
+    const sittings = Array.from({ length: 12 }, (_, index) =>
+      promptsOf({ ...session, diagnosticSessionId: `session-${index}` }));
+    expect(new Set(sittings).size).toBeGreaterThan(1);
+  });
+
+  it("is deterministic for a given session", () => {
+    expect(buildDiagnosticSessionItems(session)).toEqual(buildDiagnosticSessionItems(session));
+  });
+
+  it("carries a distractor map on every item so gap diagnosis keeps its misconception tags", () => {
+    // An empty map degrades every miss to a null tag and a generic fallback diagnosis.
+    for (const entry of buildDiagnosticSessionItems(session)) {
+      expect(Object.keys(entry.item.distractorMap).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("scores its own generated answers", () => {
+    for (const entry of buildDiagnosticSessionItems(session)) {
+      expect(scoreAnswer(entry.item, entry.item.answerSpec.accepted[0] as string)).toBe(true);
     }
   });
 });

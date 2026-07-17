@@ -8,7 +8,16 @@ import { StudentRoster } from "@/components/teacher/student-roster";
 import { Card } from "@/components/ui";
 import type { TeacherDashboard } from "@/lib/types";
 
-export function DashboardView({ dashboard }: { dashboard: TeacherDashboard }) {
+export function DashboardView({
+  dashboard,
+  onRemoveStudent,
+  removingStudentId,
+}: {
+  dashboard: TeacherDashboard;
+  /** Only a temporary workspace passes these; the sample class roster is fixed. */
+  onRemoveStudent?: (id: string) => void;
+  removingStudentId?: string | null;
+}) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [assignedFollowUps, setAssignedFollowUps] = useState<Set<string>>(() => new Set());
   const [sentReminders, setSentReminders] = useState<Set<string>>(() => new Set());
@@ -52,7 +61,13 @@ export function DashboardView({ dashboard }: { dashboard: TeacherDashboard }) {
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
       <aside className="w-full shrink-0 lg:sticky lg:top-24 lg:w-[280px]">
-        <StudentRoster dashboard={dashboard} onSelect={setSelectedStudentId} selectedStudentId={selectedStudentId} />
+        <StudentRoster
+          dashboard={dashboard}
+          onRemoveStudent={onRemoveStudent}
+          onSelect={setSelectedStudentId}
+          removingStudentId={removingStudentId}
+          selectedStudentId={selectedStudentId}
+        />
       </aside>
 
       <div className="min-w-0 flex-1">

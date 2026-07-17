@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoPractice, getDemoStudentMastery, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
+import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoLearnerResume, getDemoPractice, getDemoStudentMastery, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import type { Item } from "@/lib/types";
@@ -86,6 +86,23 @@ describe("demo diagnostic to practice journey", () => {
     });
 
     expect(response).toMatchObject({ isCorrect: true });
+  });
+
+  it("resumes the same diagnostic at its first unanswered item instead of creating another run", () => {
+    const studentId = "demo-learner-resume";
+    const first = startDemoDiagnostic(studentId);
+    const firstItem = buildDiagnosticItems(studentId)[0]!;
+    recordDemoDiagnosticResponse({
+      diagnosticSessionId: first.diagnosticSessionId,
+      studentId,
+      itemId: firstItem.id,
+      answer: firstItem.answerSpec.accepted[0],
+    });
+
+    const resumed = startDemoDiagnostic(studentId);
+    expect(resumed.diagnosticSessionId).toBe(first.diagnosticSessionId);
+    expect(resumed.answeredItemIds).toEqual([firstItem.id]);
+    expect(getDemoLearnerResume(studentId)).toEqual({ kind: "diagnostic", diagnosticSessionId: first.diagnosticSessionId });
   });
 
   it("uses server-validated generated parameters to replace a newly created practice plan", () => {

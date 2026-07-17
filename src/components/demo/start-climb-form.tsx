@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buttonClasses } from "@/components/ui";
 
 type CreateParticipantResponse = {
   participant?: { studentId?: string };
   error?: string;
+};
+
+type ResumeParticipantResponse = {
+  participant?: { studentId: string; displayName: string };
+  resume?: { kind: "start" | "diagnostic" | "diagnosis" | "practice" | "mastery"; nextPath: string };
 };
 
 /**
@@ -19,6 +24,22 @@ export function StartClimbForm() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [existing, setExisting] = useState<ResumeParticipantResponse | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/demo/participant", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((body: ResumeParticipantResponse | null) => {
+        if (active && body?.participant && body.resume) setExisting(body);
+      })
+      // A missing/expired cookie is the normal new-learner state. The form
+      // remains usable if the resume check has a transient network failure.
+      .catch(() => undefined)
+      .finally(() => { if (active) setCheckingSession(false); });
+    return () => { active = false; };
+  }, []);
 
   async function startClimb(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,6 +66,58 @@ export function StartClimbForm() {
     }
   }
 
+  /**
+   * This screen greets either learner kind, so signing out has to end both.
+   * Clearing only the participant cookie left a joined learner signed in: the
+   * form appeared, then the next load greeted them again.
+   */
+  async function signOut() {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const [participant, joined] = await Promise.all([
+        fetch("/api/demo/participant", { method: "DELETE" }),
+        fetch("/api/teacher-workspace/student-session", { method: "DELETE" }),
+      ]);
+      if (!participant.ok) throw new Error((await participant.json().catch(() => ({})) as { error?: string }).error ?? "Could not sign out.");
+      if (!joined.ok) throw new Error("Could not sign out.");
+      setExisting(null);
+      setDisplayName("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not sign out.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (checkingSession) {
+    return <p className="text-sm text-ink-muted">Checking for your climb&hellip;</p>;
+  }
+
+  if (existing?.participant && existing.resume) {
+    const actionLabel = existing.resume.kind === "practice" || existing.resume.kind === "diagnosis"
+      ? "Choose my practice"
+      : existing.resume.kind === "mastery"
+        ? "See my progress"
+        : "Continue my climb";
+    return (
+      <div className="flex w-full flex-col items-center gap-4">
+        <p className="text-lg font-semibold text-ink">Welcome back, {existing.participant.displayName}.</p>
+        <p className="text-sm text-ink-muted">
+          Your session is still active. We&rsquo;ll show the skills from your diagnostic that are not mastered yet.
+        </p>
+        <button type="button" onClick={() => router.push(existing.resume!.nextPath)} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+          {actionLabel}
+        </button>
+        <button type="button" onClick={signOut} disabled={submitting} className="text-sm font-medium text-ink-muted underline underline-offset-4 hover:text-ink disabled:opacity-60">
+          Sign out and start a different climb
+        </button>
+        {error && <p className="w-full text-left text-sm text-danger" role="alert">{error}</p>}
+      </div>
+    );
+  }
+
   return (
     <form className="flex w-full flex-col items-center gap-4" onSubmit={startClimb}>
       <label className="w-full text-left text-sm font-semibold text-ink" htmlFor="demo-display-name">
@@ -63,7 +136,7 @@ export function StartClimbForm() {
         className="w-full rounded-md border border-border bg-surface-2 px-3 py-3 text-ink placeholder:text-ink-faint focus:border-focus focus:outline-none focus:ring-2 focus:ring-focus/30 disabled:opacity-60"
       />
       <p className="w-full text-left text-sm text-ink-muted">
-        We&rsquo;ll use this only for this temporary walkthrough.
+        We&rsquo;ll use this only to personalize your practice.
       </p>
       <button type="submit" disabled={submitting || !displayName.trim()} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
         {submitting ? "Starting your climb…" : "Start the climb"}

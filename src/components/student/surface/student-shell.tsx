@@ -46,10 +46,6 @@ export function StudentShell({
       </header>
 
       <main className={cn(container, "flex flex-1 flex-col py-8")}>{children}</main>
-
-      <footer className={cn(container, "pb-6")}>
-        <p className="font-mono text-xs text-ink-faint">Prototype · practice, not a test</p>
-      </footer>
     </div>
   );
 }

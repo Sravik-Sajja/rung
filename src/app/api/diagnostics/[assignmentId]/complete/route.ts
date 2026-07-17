@@ -17,6 +17,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ ass
 
   try {
     const actor = await requireStudentActor(request, body.studentId);
+    // Only an assignment-bound session is restricted to one diagnostic. A
+    // walkthrough participant carries no assignment and is not limited here.
+    if (actor.assignmentId && actor.assignmentId !== assignmentId) {
+      return NextResponse.json({ error: "This joined student session cannot access that diagnostic." }, { status: 403 });
+    }
     if (actor.store === "persisted") {
       // A durable actor owns this path end-to-end. Never create a static bank
       // session or fall back to the local store after persistence is selected.

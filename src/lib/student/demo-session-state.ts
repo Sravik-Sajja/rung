@@ -68,6 +68,15 @@ export function getDemoSession<T>(kind: DemoSessionKind, sessionId: string): T |
   return runsFor(kind).get(sessionId) as T | undefined;
 }
 
+/**
+ * Returns the process-local sessions for a kind. This intentionally stays
+ * server-only: it exists so the cookie-bound resume endpoint can find the
+ * current learner's next step, not so a client can enumerate other learners.
+ */
+export function getDemoSessions<T>(kind: DemoSessionKind): T[] {
+  return [...runsFor(kind).values()] as T[];
+}
+
 export function deleteDemoSession(kind: DemoSessionKind, sessionId: string): boolean {
   return runsFor(kind).delete(sessionId);
 }

@@ -4,7 +4,7 @@ import { describeAcceptedAnswer, scoreAnswer } from "@/lib/math/scoring";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import { materializeGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 import { collectDiagnosticEvidence, nextMasteryLevel, projectDiagnosticMastery, selectDiagnosticGap, selectPracticeItems, shouldRequeue } from "@/lib/student/learning-loop";
-import { createDemoSessionId, getDemoSession, resetDemoSessionState, setDemoSession } from "@/lib/student/demo-session-state";
+import { createDemoSessionId, getDemoSession, getDemoSessions, resetDemoSessionState, setDemoSession } from "@/lib/student/demo-session-state";
 import { isWorkHelpEligible, type PracticeSupportEvent, type PracticeSupportEventKind } from "@/lib/student/practice-support-state";
 import type { Item, MasteryLevel, TeacherAttemptEvidence } from "@/lib/types";
 import type { GeneratedPracticePlan } from "@/lib/ai/contracts";
@@ -32,6 +32,14 @@ type PracticeRun = {
   mastery: Map<string, { level: MasteryLevel; evidenceCount: number }>;
   supportEvents?: PracticeSupportEvent[];
 };
+
+/** A presentation-safe description of where a local learner should resume. */
+export type DemoLearnerResume =
+  | { kind: "start" }
+  | { kind: "diagnostic"; diagnosticSessionId: string }
+  | { kind: "diagnosis"; diagnosticSessionId: string }
+  | { kind: "practice"; practiceSessionId: string }
+  | { kind: "mastery" };
 
 type LocalMasteryState = Map<string, { level: MasteryLevel; evidenceCount: number }>;
 type LocalResponseEvidence = TeacherAttemptEvidence & { subskillId: string };
@@ -148,6 +156,16 @@ function currentPracticeOccurrence(run: PracticeRun) {
 }
 
 export function startDemoDiagnostic(studentId: string) {
+  const existing = getDemoSessions<DiagnosticRun>("diagnostic")
+    .find((run) => run.studentId === studentId && run.assignmentId === canonicalDemoIds.diagnosticAssignmentId && !run.completion);
+  if (existing) {
+    return {
+      diagnosticSessionId: existing.id,
+      assignmentId: existing.assignmentId,
+      items: existing.items.map((item, index) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position: index + 1 })),
+      answeredItemIds: [...existing.answers.keys()],
+    };
+  }
   const diagnosticSessionId = createDemoSessionId("diagnostic");
   // Same five skills, same order, same wording for everyone; only the numbers are per student.
   const items = buildDiagnosticItems(studentId);
@@ -157,7 +175,35 @@ export function startDemoDiagnostic(studentId: string) {
     diagnosticSessionId: run.id,
     assignmentId: run.assignmentId,
     items: items.map((item, index) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position: index + 1 })),
+    answeredItemIds: [],
   };
+}
+
+/**
+ * Finds one learner's next unfinished local task. Session records are never
+ * exposed here; the route first proves ownership with the opaque cookie.
+ */
+export function getDemoLearnerResume(studentId: string): DemoLearnerResume {
+  const diagnostics = getDemoSessions<DiagnosticRun>("diagnostic")
+    .filter((run) => run.studentId === studentId && run.assignmentId === canonicalDemoIds.diagnosticAssignmentId);
+  const partial = diagnostics.find((run) => !run.completion && run.answers.size < run.items.length);
+  if (partial) return { kind: "diagnostic", diagnosticSessionId: partial.id };
+  const readyToComplete = diagnostics.find((run) => !run.completion && run.answers.size === run.items.length);
+  if (readyToComplete) return { kind: "diagnosis", diagnosticSessionId: readyToComplete.id };
+
+  const activePractice = getDemoSessions<PracticeRun>("practice")
+    .find((run) => run.studentId === studentId && run.items.some((item) => item.status !== "correct"));
+  if (activePractice) {
+    const completedDiagnostic = diagnostics.find((run) =>
+      run.completion?.practicePlans?.some((plan) => plan.id === activePractice.id)
+      || run.completion?.practiceSession.id === activePractice.id,
+    );
+    if (completedDiagnostic) return { kind: "diagnosis", diagnosticSessionId: completedDiagnostic.id };
+    return { kind: "practice", practiceSessionId: activePractice.id };
+  }
+
+  if (diagnostics.some((run) => run.completion)) return { kind: "mastery" };
+  return { kind: "start" };
 }
 
 export function recordDemoDiagnosticResponse(input: { diagnosticSessionId: string; studentId: string; itemId: string; answer: string; usedHint?: boolean }) {
@@ -184,8 +230,22 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
   // Completion is cached below, so this deterministic projection runs once
   // even if a double-click retries the completion request.
   applyDiagnosticMastery(input.studentId, evidence);
-  const practicePlanTargets = [...new Map(evidence.filter((entry) => !entry.isCorrect).map((entry) => [entry.subskillId, entry])).values()]
-    .map((entry) => ({ subskillId: entry.subskillId, misconceptionTag: entry.misconceptionTag ?? "needs-practice" }));
+  // Students can choose any skill that is not yet mastered. The diagnostic
+  // misses still lead the list, so the recommended first step stays clear.
+  const evidenceBySubskill = new Map(evidence.map((entry) => [entry.subskillId, entry]));
+  const practicePlanTargets = demoSubskills
+    .map((subskill, order) => ({
+      subskillId: subskill.id,
+      order,
+      evidence: evidenceBySubskill.get(subskill.id),
+      mastery: currentStudentMastery(input.studentId, subskill.id),
+    }))
+    .filter((entry) => entry.mastery.level !== "mastered")
+    .sort((left, right) => Number(left.evidence?.isCorrect ?? true) - Number(right.evidence?.isCorrect ?? true) || left.order - right.order)
+    .map((entry) => ({
+      subskillId: entry.subskillId,
+      misconceptionTag: entry.evidence?.isCorrect ? "build-fluency" : entry.evidence?.misconceptionTag ?? "needs-practice",
+    }));
   const gap = selectDiagnosticGap(evidence, prerequisites) ?? {
     subskillId: canonicalDemoIds.commonDenominatorSubskillId,
     misconceptionTag: null,

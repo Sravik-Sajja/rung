@@ -7,7 +7,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { canonicalDemoIds } from "@/lib/demo/contracts";
+import { publicWalkthroughIds } from "@/lib/demo/contracts";
 
 export const DEMO_PARTICIPANT_COOKIE = "rung_demo_participant";
 export const DEMO_PARTICIPANT_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
@@ -142,7 +142,7 @@ function createLocalParticipant(displayName: string, token: string, expiry: stri
     studentId: `${DEMO_PARTICIPANT_ID_PREFIX}${randomUUID().replaceAll("-", "")}`,
     displayName,
     gradeBand: DEMO_PARTICIPANT_GRADE_BAND,
-    classId: canonicalDemoIds.classId,
+    classId: publicWalkthroughIds.classId,
     expiresAt: expiry,
     source: "local",
   };
@@ -249,6 +249,29 @@ export async function resolveDemoParticipantSession(request: Request, now = new 
   if (!token) return { kind: "missing_cookie" };
   if (!isOpaqueSessionToken(token)) return { kind: "invalid" };
   return durableResolution(token, now);
+}
+
+/**
+ * Ends only the cookie-bound temporary session. Durable learner records remain
+ * available for the teacher demo, but their opaque token cannot resume work.
+ */
+export async function revokeDemoParticipantSession(request: Request): Promise<void> {
+  const token = parseDemoParticipantCookie(request.headers.get("cookie"));
+  if (!token || !isOpaqueSessionToken(token)) return;
+  const hash = tokenHash(token);
+  const client = configuredClient();
+  if (!client) {
+    const record = localState.byTokenHash.get(hash);
+    if (record) localState.byStudentId.delete(record.studentId);
+    localState.byTokenHash.delete(hash);
+    return;
+  }
+  const { error } = await client
+    .from("demo_participant_sessions")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("token_hash", hash)
+    .is("revoked_at", null);
+  if (error) throw new Error(`Could not sign out the temporary learner: ${error.message}`);
 }
 
 /**

@@ -5,8 +5,10 @@ import { createAiAdapter, DEFAULT_AI_MODEL, modelFor } from "@/lib/ai/runtime";
 class FakeRunStore implements AiRunStore {
   readonly records: AiRunRecord[] = [];
   cached: unknown | null = null;
+  onFindValid: ((input: AiRunLookup) => void) | null = null;
 
-  async findValid(_input: AiRunLookup): Promise<unknown | null> {
+  async findValid(input: AiRunLookup): Promise<unknown | null> {
+    this.onFindValid?.(input);
     return this.cached;
   }
 
@@ -137,9 +139,38 @@ describe("live AI adapter resolution", () => {
     expect(store.records[1]?.inputHash).toBe(store.records[0]?.inputHash);
   });
 
-  it("uses a prior valid cache entry after a live failure", async () => {
+  it("uses a prior valid cache entry after a live failure when the feature is live-first", async () => {
     const store = new FakeRunStore();
     store.cached = { hint: "Which number is a multiple of both denominators?" };
+    const adapter = createAiAdapter({
+      completionClient: new FakeCompletionClient(new Error("network unavailable")),
+      runStore: store,
+      cacheModes: { tutor_hint: "live_first" },
+    });
+
+    const result = await adapter.tutorHint(tutorInput());
+
+    expect(result.source).toBe("cache");
+    expect(result.hint).toContain("multiple");
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "cache_hit"]);
+  });
+
+  it("serves a cache-first hint without calling the model at all", async () => {
+    const store = new FakeRunStore();
+    store.cached = { hint: "Which number is a multiple of both denominators?" };
+    const client = new FakeCompletionClient({ hint: "A live hint that should never be requested." });
+
+    const result = await createAiAdapter({ completionClient: client, runStore: store }).tutorHint(tutorInput());
+
+    expect(result.source).toBe("cache");
+    expect(client.requests).toHaveLength(0);
+    expect(store.records.map((record) => record.status)).toEqual(["cache_hit"]);
+  });
+
+  it("calls the model when a cache-first hint misses, and does not look in the cache twice", async () => {
+    const store = new FakeRunStore();
+    let lookups = 0;
+    store.onFindValid = () => { lookups += 1; };
     const adapter = createAiAdapter({
       completionClient: new FakeCompletionClient(new Error("network unavailable")),
       runStore: store,
@@ -147,8 +178,61 @@ describe("live AI adapter resolution", () => {
 
     const result = await adapter.tutorHint(tutorInput());
 
-    expect(result.source).toBe("cache");
-    expect(result.hint).toContain("multiple");
+    expect(result.source).toBe("fallback");
+    expect(lookups).toBe(1);
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
+  it("re-runs the leak check on a cache-first hit, so an entry stored under a looser check cannot be served", async () => {
+    const store = new FakeRunStore();
+    store.cached = { hint: "Try 24 as the common denominator." };
+
+    const result = await createAiAdapter({
+      completionClient: new FakeCompletionClient(new Error("network unavailable")),
+      runStore: store,
+    }).tutorHint(tutorInput());
+
+    expect(result.source).toBe("fallback");
+    expect(store.records.map((record) => record.status)).toEqual(["live_failed", "fallback"]);
+  });
+
+  it("keys a hint on the item, attempt, and level so two learners share one entry", async () => {
+    const store = new FakeRunStore();
+    const client = new FakeCompletionClient({ hint: "What multiple do both denominators share?" });
+    const adapter = createAiAdapter({ completionClient: client, runStore: store, cacheModes: { tutor_hint: "live_first" } });
+
+    await adapter.tutorHint({ ...tutorInput(), studentId: "maya-chen" });
+    await adapter.tutorHint({ ...tutorInput(), studentId: "a-different-learner" });
+
+    expect(store.records[0]?.inputHash).toBe(store.records[1]?.inputHash);
+  });
+
+  it("keeps a different attempt or level on its own cache entry", async () => {
+    const store = new FakeRunStore();
+    const client = new FakeCompletionClient({ hint: "What multiple do both denominators share?" });
+    const adapter = createAiAdapter({ completionClient: client, runStore: store, cacheModes: { tutor_hint: "live_first" } });
+
+    await adapter.tutorHint(tutorInput());
+    await adapter.tutorHint({ ...tutorInput(), attempt: "I tried 12" });
+    await adapter.tutorHint({ ...tutorInput(), level: "nudge" });
+
+    const hashes = new Set(store.records.map((record) => record.inputHash));
+    expect(hashes.size).toBe(3);
+  });
+
+  it("keeps work analysis live-first, so one learner's coaching is never served to another", async () => {
+    const store = new FakeRunStore();
+    store.cached = {
+      observation: "You lined the fractions up before finding a shared denominator.",
+      nextStep: "List a few multiples of each denominator.",
+      checkQuestion: "Which number appears in both lists?",
+      imageRead: "unclear",
+    };
+    const client = new FakeCompletionClient(new Error("network unavailable"));
+
+    await createAiAdapter({ completionClient: client, runStore: store }).analyzeWork(workAnalysisInput());
+
+    expect(client.requests).toHaveLength(1);
     expect(store.records.map((record) => record.status)).toEqual(["live_failed", "cache_hit"]);
   });
 

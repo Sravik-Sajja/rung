@@ -43,11 +43,20 @@ export type DemoParticipant = {
   expiresAt: string;
 };
 
-export type GetDemoParticipantResponse = { participant: DemoParticipant | null };
+export type LearnerResume = {
+  kind: "start" | "diagnostic" | "diagnosis" | "practice" | "mastery";
+  /** A participant-owned next route; it contains no answer, score, or item key. */
+  nextPath: string;
+};
+
+export type GetDemoParticipantResponse = {
+  participant: DemoParticipant | null;
+  resume?: LearnerResume;
+};
 export type CreateDemoParticipantResponse = { participant: DemoParticipant };
 ```
 
-`GET /api/demo/participant` returns `404` with `participant: null` when no cookie is present, and `401` for invalid or expired cookies. It never silently substitutes Maya. A temporary session lasts eight hours; the current seed reset removes durable temporary records, while background expiry cleanup is not yet implemented.
+`GET /api/demo/participant` returns a cookie-owned, answer-free resume route: an unfinished diagnostic, pending diagnosis, active focused-practice session, mastery view, or the first diagnostic. Every resume path names the assignment or class it belongs to, so no caller falls back to the canonical walkthrough assignment. It answers for either learner kind: a walkthrough participant, or — when no participant cookie is present — a learner holding only a joined-class session, whose resume is scoped to that class's own assignment. It returns `404` with `participant: null` when neither cookie is present, and `401` for an invalid or expired participant cookie. It never silently substitutes a seeded learner. A temporary session lasts eight hours; the current seed reset removes durable temporary records, while background expiry cleanup is not yet implemented.
 
 ## AI adapter
 
@@ -203,12 +212,17 @@ The adapter may not alter a deterministic score, mastery decision, practice prog
 
 ### Live/cache/fallback contract
 
-Every adapter call follows this sequence:
+Every adapter call resolves through the same three tiers. A feature's `AiCacheMode` decides only whether the cache is consulted before or after the model; see architecture.md §6 for which features get which order and why.
 
-1. Make a live request to the routed GPT-5.6 model.
-2. Validate its structured output and safety policy; only then store/use it as a verified cache entry.
-3. On timeout, provider error, invalid schema, or policy rejection, use only a cache entry matching the feature, stable entity/context, normalized attempt text when applicable, and prompt version.
-4. If no matching verified cache exists, return the typed safe fallback.
+1. If the feature is `cache_first`, look for a verified cache entry matching the feature, prompt version, and input hash. On a hit, validate it and return it without a model request.
+2. Otherwise, or on a miss, make a live request to the routed GPT-5.6 model.
+3. Validate its structured output and safety policy; only then store/use it as a verified cache entry.
+4. On timeout, provider error, invalid schema, or policy rejection, a `live_first` feature falls back to a matching verified cache entry. A `cache_first` feature does not look twice — it already missed at step 1.
+5. If no matching verified cache exists, return the typed safe fallback.
+
+A cached payload is re-parsed and re-validated against the current schema and safety policy on every hit, in either order. An entry stored when a leak check was looser is rejected and drops through to the fallback rather than being served.
+
+The order is configuration, not a constant. `DEFAULT_AI_CACHE_MODES` holds the reviewed defaults, `OPENAI_CACHE_MODE` overrides every feature, and `OPENAI_CACHE_MODE_<FEATURE>` overrides one. Tests pin the order explicitly via `createAiAdapter({ cacheModes })` rather than depending on the default.
 
 Work-analysis fallback returns one safe generic observation, next step, and check question. It never claims whether work is correct, returns a protected answer or solution step, or changes progress. Diagnosis fallback may explain only the deterministically selected tag; tutor fallback must be non-answer-revealing; teacher-plan fallback is a seeded plan snapshot. Legacy peer-verification fallback remains fail-closed while the old endpoint exists.
 

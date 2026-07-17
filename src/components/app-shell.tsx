@@ -1,4 +1,4 @@
-// Shared page frame: Rung wordmark, student/teacher switch, and the prototype notice. Theme-aware via tokens.
+// Shared page frame: Rung wordmark and student/teacher switch. Theme-aware via tokens.
 import Link from "next/link";
 import { RungWordmark } from "@/components/rung-wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -35,7 +35,7 @@ export function AppShell({
               Student
             </Link>
             <Link
-              href="/teacher/dashboard"
+              href="/teacher-workspace"
               className={`rounded-md px-3 py-1.5 transition-colors ${
                 active === "teacher" ? "bg-accent-soft font-medium text-accent" : "text-ink-muted hover:text-ink"
               }`}
@@ -48,12 +48,6 @@ export function AppShell({
       </header>
 
       <main className={`mx-auto ${maxW} px-6 py-10`}>{children}</main>
-
-      <footer className={`mx-auto ${maxW} px-6 pb-10`}>
-        <p className="font-mono text-xs text-ink-faint">
-          Prototype · not for grading · not a substitute for teacher judgment
-        </p>
-      </footer>
     </div>
   );
 }

@@ -15,9 +15,9 @@ export default async function DashboardPage() {
     return (
       <AppShell active="teacher">
         <PageHeader
-          description="No class data is available for this demo class."
-          eyebrow="Teacher"
-          title="Class dashboard"
+          description="The fixed sample class is unavailable. Create a teacher workspace to make a separate fictional class."
+          eyebrow="Sample teacher view"
+          title="Sample class dashboard"
         />
       </AppShell>
     );
@@ -26,9 +26,9 @@ export default async function DashboardPage() {
   return (
     <AppShell active="teacher" width="wide">
       <PageHeader
-        description={`Mastery evidence from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Cells reflect stored diagnostic and practice evidence.`}
-        eyebrow="Teacher · fractions class"
-        title="Ms. Rivera's fractions class"
+        description={`Fixed sample data from ${dashboard.students.length} students across ${dashboard.subskills.length} fraction subskills. Public walkthrough learners never appear here.`}
+        eyebrow="Sample teacher view · fractions class"
+        title="Sample: Ms. Rivera's fractions class"
       />
       <DashboardView dashboard={dashboard} />
     </AppShell>

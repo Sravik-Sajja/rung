@@ -124,7 +124,7 @@ The MVP may use the Next.js App Router with server components for read-heavy das
 
 Responsibilities:
 
-- Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In non-production `DEMO_MODE`, resolve either an explicitly allow-listed seed identity or a server-created temporary learner bound by an opaque httpOnly cookie; do not accept arbitrary client IDs.
+- Resolve the Supabase Auth session and enforce the caller's role, class membership, and student/teacher scope. In non-production `DEMO_MODE`, resolve only a server-created temporary learner bound by an opaque httpOnly cookie; do not accept arbitrary client IDs or activate a seeded roster identity.
 - Coordinate scoring, mastery updates, practice progression, and model calls.
 - Validate request shape and return stable, typed responses.
 - Log model request metadata and failures without storing secrets.
@@ -134,6 +134,8 @@ All mutation and model workflows cross this boundary. Browser code must not deci
 ### Data: Supabase Postgres
 
 Supabase is the canonical store for curriculum, users, scored responses, mastery, groups, safe cached model outputs, video recommendations, and plan snapshots. Use migrations and a repeatable seed script so the demo tenant can be recreated.
+
+**Seeded curriculum is cached in-process; learner state never is.** Items, sub-skills, assignments, and `assignment_items` change only when the seed runs, but they are read on every submitted answer and every hint request. Re-reading them was free against a process-local demo store and is not free against Postgres, so those reads go through a short-lived process-local cache (`withCurriculumCache`) that coalesces concurrent misses into one query and never caches a failed read. The boundary is strict: mastery, responses, sessions, and support state are excluded, because the teacher heatmap's credibility depends on a participant's evidence appearing immediately (§9.4). Entries expire on a TTL because `npm run seed` runs out of process and cannot invalidate a cache inside a running server; `RUNG_CURRICULUM_CACHE_SECONDS=0` disables caching outright while seed content is being edited.
 
 Production uses Supabase Auth plus Row Level Security (RLS) from the first deployable release. A `profiles` row links each `auth.users` identity to a single application role. Students may read/write only their own responses, sessions, attempts, unlocks, and mastery; teachers may read only their classes and associated aggregate/group data; neither role receives service-role credentials. The service role stays server-only and is limited to migrations, seed/reset CLI work, and narrowly audited administrative jobs. `DEMO_MODE` fails closed in production. In non-production, a temporary participant is created server-side, enrolled in the demo class with a `not_started` mastery matrix, and resolved only through its opaque httpOnly cookie. Consent, deletion, and age-appropriate privacy review remain required before serving minors at scale.
 
@@ -155,9 +157,20 @@ Use the currently approved OpenAI model configured by an environment variable ra
 
 ### Cache and fallback policy
 
-Option B is required: **live model call -> verified cache -> safe deterministic fallback**. The adapter calls the configured GPT-5.6 model first, validates the structured result and policy checks, then stores it as a verified cache entry. On timeout, API failure, invalid schema, or unsafe output, it uses only a matching verified cache entry; if none exists, it returns a feature-specific safe fallback. Tutor returns a non-answer-revealing deterministic hint; work analysis returns a generic observation, one next move, and one check question; diagnosis returns a seeded explanation of deterministic evidence; lesson planning returns a seeded plan. The UI may identify the response source but must not present a failed live call as model-generated.
+Every feature ends in the same three tiers — **model call, verified cache entry, safe deterministic fallback** — and validates a cached payload exactly as strictly as a live one, so an entry stored under a looser leak check can never be served after the check tightens. What varies is only whether the cache is consulted before or after the model.
 
-Cache AI outputs by `feature`, the relevant stable entity (such as `item_id` or `teacher_group_id`), and `prompt_version`. Never use a cache entry created for a different item, sub-skill, or learner context. Work analysis additionally keys on one-way hashes of the typed work and optional image, never their raw values (see §9.3).
+**Revised 2026-07-17.** This section previously required live-first for every feature. It is now a per-feature choice, because the two orders answer different questions:
+
+- **`cache_first`** — check the verified cache, and call the model only on a miss. Permitted only where the output is a pure function of the cache key, so a stored entry is indistinguishable from a fresh call. Tutor hints, diagnosis explanations, and teacher lesson drafts qualify: a hint depends on the item, attempt, and level and on nothing else, and §9.4 already required cache-first for the group plan. This is what keeps §4's promise that the demo never waits on a model call for a result that is already required to appear.
+- **`live_first`** — call the model, and treat the cache purely as an outage net. Required where a hit would be a coincidence rather than reuse (work analysis, keyed on one learner's own typed work), or where serving a stored decision would be unsafe (attempt verification, which fails closed by §9.3). Practice-plan generation stays live-first because plans are persisted downstream with their own provenance.
+
+The order is per-feature configuration, not a hard-coded constant: `DEFAULT_AI_CACHE_MODES` sets the defaults above, `OPENAI_CACHE_MODE` overrides all features, and `OPENAI_CACHE_MODE_<FEATURE>` overrides one. An unrecognised value is ignored rather than defaulted, so a typo cannot silently move a feature off its reviewed order.
+
+On timeout, API failure, invalid schema, or unsafe output, a feature uses only a matching verified cache entry; if none exists, it returns a feature-specific safe fallback. Tutor returns a non-answer-revealing deterministic hint; work analysis returns a generic observation, one next move, and one check question; diagnosis returns a seeded explanation of deterministic evidence; lesson planning returns a seeded plan. The UI may identify the response source but must not present a failed live call as model-generated.
+
+**Cache keys cover exactly the inputs the model receives, and nothing else.** A key contains `feature`, `prompt_version`, and the safe request payload. Identity is deliberately excluded from the tutor and diagnosis keys: a hint is a function of the item, attempt, and level, and an explanation is a function of the deterministic evidence, so keying on `student_id` would fragment the cache one entry per learner and guarantee that a class making the same mistake never reuses anything. Two learners sharing an entry is the intended behaviour, not a leak — the payload never contained learner-identifying content. What must never be shared is a cache entry created for a different item, sub-skill, prompt version, or *request*. Work analysis is the deliberate exception: it keys on one-way hashes of the typed work and optional image, never their raw values (§9.3), and stays live-first so one learner's coaching is never served to another.
+
+`ai_runs` is both the audit log and the cache — a row with `status = 'valid'` is the cache entry — so the lookup on `(feature, input_hash, prompt_version)` is indexed, partially on that status. Without the index the cache read is a sequential scan over a log that gains a row on every adapter call, and it degrades exactly as the demo is used.
 
 ## 7. Domain model
 
@@ -190,7 +203,7 @@ Each item explicitly declares the sub-skill it assesses or practices. The app do
 | `assignments` | Teacher-assigned diagnostic | `id`, `class_id`, `topic_id`, `title`, `mode` |
 | `assignment_items` | Stable diagnostic order | `assignment_id`, `item_id`, `position` |
 | `student_responses` | Every submitted diagnostic/practice answer | `id`, `student_id`, `item_id`, `answer_raw`, `is_correct`, `context`, `diagnostic_session_id`, `practice_session_id`, `practice_session_item_id`, `submitted_at` |
-| `mastery` | Latest mastery status per student/sub-skill | `student_id`, `subskill_id`, `level`, `evidence_count`, `last_evaluated_at` |
+| `mastery` | Latest mastery status per student/class/sub-skill | `student_id`, `class_id`, `subskill_id`, `level`, `evidence_count`, `last_evaluated_at` |
 | `practice_sessions` | Generated/selected practice sequence | `id`, `student_id`, `topic_id`, `status`, `diagnosis_snapshot`, `diagnostic_session_id`, `completed_at` |
 | `practice_session_items` | Ordered selected practice items | `practice_session_id`, `item_id`, `position`, `status` |
 | `diagnostic_completions` | Stable deterministic/AI-safe completion result | `diagnostic_session_id`, `selected_subskill_id`, `misconception_tag`, `evidence`, `explanation_source`, `completion_version` |
@@ -402,7 +415,7 @@ Exact routing may evolve, but server operations must have these contracts.
 | Operation | Request | Response |
 | --- | --- | --- |
 | `POST /api/demo/participant` | non-production `{ displayName }` | public temporary participant fields; sets opaque httpOnly cookie |
-| `GET /api/demo/participant` | non-production participant cookie | current public participant fields, or missing/expired/invalid session status |
+| `GET /api/demo/participant` | non-production participant cookie | current public participant fields plus the next answer-free resume route, or missing/expired/invalid session status |
 | `POST /api/responses` | authenticated actor, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, ordered selectable practice-plan cards |
 | `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
@@ -411,7 +424,7 @@ Exact routing may evolve, but server operations must have these contracts.
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
 | `GET /api/teacher-groups/:groupId/plan` | authenticated teacher authorized for the group class | dated plan snapshot and matching video |
 
-All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and always disabled in production. In non-production it may resolve an allow-listed fictional seed identity or a server-created temporary participant bound by an opaque, httpOnly cookie.
+All request bodies are validated with shared schemas. Production identity and role come from the authenticated session, not a client-provided `studentId` or `classId`; routes also enforce RLS-compatible membership checks. `DEMO_MODE` is explicitly environment-gated and always disabled in production. In non-production it resolves only a server-created temporary participant bound by an opaque, httpOnly cookie.
 
 ### 11.1 Shared API contract
 
@@ -421,7 +434,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 
 ### Student routes
 
-- `/demo` — non-production, environment-gated walkthrough entry. A visitor enters a first name or nickname and receives a server-created, cookie-bound temporary learner identity. Maya remains an explicit secondary prepared walkthrough for rehearsal or recovery; an expired or invalid temporary session never falls through to Maya.
+- `/demo` — non-production, environment-gated walkthrough entry. A visitor enters a first name or nickname and receives a server-created, cookie-bound temporary learner identity. While its eight-hour cookie is valid, returning visitors get one Continue action to their earliest unfinished diagnostic or active focused-practice task; an expired or invalid session never falls through to a seeded learner.
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
 - `/student/diagnosis` — evidence-oriented plain language and a practice-plan hub: one selectable card per missed skill, with completed cards retained as completed when the learner returns from another plan.
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
@@ -465,7 +478,7 @@ The demo dataset is a product asset, not placeholder data.
 It must include:
 
 - One class with 8–12 named-but-fictional students.
-- Maya as the prepared secondary walkthrough and recovery path. The primary visitor path creates a fictional, temporary learner for the current non-production walkthrough.
+- A cookie-bound temporary participant as the only active learner path; the seeded roster remains teacher-only fictional data.
 - At least three students with the common-denominator gap, so the teacher group is convincing.
 - At least one student in each visible mastery state to make the heatmap legible.
 - Exactly five fixed, ordered diagnostic items that yield distinct, explainable error patterns, each with a `distractor_map` so a chosen wrong answer names a specific misconception. Maya's seeded responses must select the distractors mapped to the common-denominator misconception.
@@ -568,7 +581,7 @@ The hard rule is that Tracks A, B, and C do not start until Phase-0 contracts an
 The MVP is ready when all statements below are true:
 
 - A fresh database seed produces the same credible demo class and prepared Maya fallback journey.
-- A temporary walkthrough learner's server-owned diagnostic, practice, and mastery evidence appears in the teacher heatmap for the lifetime of the non-production demo session.
+- A temporary walkthrough learner's server-owned diagnostic, practice, and mastery evidence stays in the public walkthrough class and never appears in a teacher heatmap. When that learner joins a teacher workspace, they keep the same student record and gain a class-scoped mastery matrix, so the teacher sees only work done in their own class.
 - The student flow completes from diagnostic through an answer-safe work-help escalation without manual database edits.
 - Maya receives the specific common-denominator diagnosis based on deterministic answer evidence.
 - Tutor help has three visible levels and never displays the final answer.

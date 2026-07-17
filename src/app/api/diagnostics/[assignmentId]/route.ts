@@ -9,6 +9,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ assi
   if (!studentId) return NextResponse.json({ error: "Start your climb before opening a diagnostic." }, { status: 400 });
   try {
     const actor = await requireStudentActor(request, studentId);
+    // Only an assignment-bound session is restricted to one diagnostic. A
+    // walkthrough participant carries no assignment and is not limited here.
+    if (actor.assignmentId && actor.assignmentId !== assignmentId) {
+      return NextResponse.json({ error: "This joined student session cannot access that diagnostic." }, { status: 403 });
+    }
     const diagnostic = actor.store === "local_demo"
       ? startDemoDiagnostic(studentId)
       : await startPersistedDiagnostic({ studentId, assignmentId });

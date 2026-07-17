@@ -23,7 +23,7 @@ import {
   resetDemoLearningStore,
   startDemoDiagnostic,
 } from "@/lib/student/demo-learning-store";
-import { getTeacherDashboard } from "@/lib/teacher/repository";
+import { publicWalkthroughIds } from "@/lib/demo/contracts";
 
 function requestWithParticipantCookie(token: string) {
   return new Request("http://localhost/api/example", {
@@ -59,6 +59,7 @@ describe("temporary demo participants", () => {
     expect(participant.studentId).toMatch(/^demo-learner-/);
     expect(participant.displayName).toBe("Ari O'Neil");
     expect(participant.source).toBe("local");
+    expect(participant.classId).toBe(publicWalkthroughIds.classId);
 
     const request = requestWithParticipantCookie(participant.sessionToken);
     await expect(resolveDemoParticipantSession(request)).resolves.toEqual({
@@ -82,13 +83,9 @@ describe("temporary demo participants", () => {
       .rejects.toThrow("Start your climb");
   });
 
-  it("projects local participant rows and evolving local mastery through the teacher repository", async () => {
+  it("keeps local participant learning state bound to the walkthrough class", async () => {
     const participant = await createDemoParticipant({ displayName: "Jordan" });
-    const before = await getTeacherDashboard();
-    expect(before?.students).toContainEqual(expect.objectContaining({ id: participant.studentId, displayName: "Jordan" }));
-    expect(before?.cells.filter((cell) => cell.studentId === participant.studentId)).toHaveLength(5);
-    expect(before?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
-      .toEqual(expect.objectContaining({ level: "not_started" }));
+    expect(participant.classId).toBe(publicWalkthroughIds.classId);
 
     const diagnostic = startDemoDiagnostic(participant.studentId);
     for (const item of diagnostic.items) {
@@ -126,28 +123,6 @@ describe("temporary demo participants", () => {
       answer: "7/12",
     });
 
-    const after = await getTeacherDashboard();
-    expect(after?.cells.find((cell) => cell.studentId === participant.studentId && cell.subskillId === "add-unlike-denominators"))
-      .toEqual(expect.objectContaining({ level: "developing", evidenceSummary: "Updated from your focused practice." }));
-  });
-
-  it("does not replace configured database failures with local demo data", async () => {
-    const participant = await createDemoParticipant({ displayName: "Database check" });
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
-    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
-    mocks.createClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn().mockResolvedValue({ data: null, error: { message: "database unavailable" } }),
-        })),
-      })),
-    });
-
-    await expect(getTeacherDashboard()).rejects.toThrow("Could not load teacher dashboard: database unavailable");
-    expect(mocks.createClient).toHaveBeenCalled();
-    // The locally-created learner proves this is not merely an empty-store
-    // failure: the repository must still surface the database error instead
-    // of presenting their local row as a successful durable dashboard.
-    expect(participant.source).toBe("local");
+    expect(getDemoPractice(practiceSessionId, participant.studentId)?.items[0]?.status).toBe("correct");
   });
 });

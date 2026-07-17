@@ -8,6 +8,7 @@ import {
   canonicalTeacherPracticeItemIds,
   isMasteryLevel,
   masteryLevels,
+  publicWalkthroughIds,
 } from "@/lib/demo/contracts";
 
 describe("partner demo contracts", () => {
@@ -15,6 +16,8 @@ describe("partner demo contracts", () => {
     expect(canonicalDemoIds.classId).toBe("fractions-demo-class");
     expect(canonicalDemoIds.mayaStudentId).toBe("riley-johnson");
     expect(canonicalDemoIds.commonDenominatorSubskillId).toBe("find-common-denominator");
+    expect(publicWalkthroughIds.classId).toBe("fractions-walkthrough-class");
+    expect(publicWalkthroughIds.classId).not.toBe(canonicalDemoIds.classId);
   });
 
   it("publishes the complete heatmap mastery enum", () => {

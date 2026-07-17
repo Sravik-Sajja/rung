@@ -12,7 +12,7 @@ import { canonicalDemoIds } from "@/lib/demo/contracts";
 import type { ItemVisualSpec } from "@/lib/types";
 
 type DiagnosticItem = { id: string; prompt: string; subskillId: string; visualSpec?: ItemVisualSpec; position: number };
-type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: DiagnosticItem[] };
+type Diagnostic = { diagnosticSessionId: string; assignmentId: string; items: DiagnosticItem[]; answeredItemIds?: string[] };
 
 // The external action button submits the FractionInput's form via the `form` attribute, so
 // Check and Next can morph in one fixed position at the bottom of the card.
@@ -48,10 +48,11 @@ function DiagnosticContent() {
   // The server still verifies this against the opaque demo cookie; the query
   // merely preserves the selected learner across the visible walkthrough.
   const studentId = searchParams.get("studentId");
+  const assignmentId = searchParams.get("assignmentId") ?? canonicalDemoIds.diagnosticAssignmentId;
   const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
   // The framing copy earns its display size exactly once — as an intro step — instead of sitting
   // beside every question as a permanent second focal point.
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(() => searchParams.get("resume") === "1");
   const [index, setIndex] = useState(0);
   const [recorded, setRecorded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -63,11 +64,21 @@ function DiagnosticContent() {
       router.replace("/demo");
       return;
     }
-    fetch(`/api/diagnostics/${canonicalDemoIds.diagnosticAssignmentId}?studentId=${encodeURIComponent(studentId)}`)
+    fetch(`/api/diagnostics/${encodeURIComponent(assignmentId)}?studentId=${encodeURIComponent(studentId)}`)
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error((await response.json()).error)))
-      .then(setDiagnostic)
+      .then((nextDiagnostic: Diagnostic) => {
+        const answered = new Set(nextDiagnostic.answeredItemIds ?? []);
+        const firstUnanswered = nextDiagnostic.items.findIndex((candidate) => !answered.has(candidate.id));
+        if (firstUnanswered === -1) {
+          router.replace(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(nextDiagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId)}&assignmentId=${encodeURIComponent(assignmentId)}`);
+          return;
+        }
+        setIndex(firstUnanswered);
+        setRecorded(false);
+        setDiagnostic(nextDiagnostic);
+      })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not start diagnostic"));
-  }, [router, studentId]);
+  }, [assignmentId, router, studentId]);
 
   const item = diagnostic?.items[index];
   const total = diagnostic?.items.length ?? 0;
@@ -98,7 +109,7 @@ function DiagnosticContent() {
   function handleNext() {
     if (!diagnostic) return;
     if (isLastItem) {
-      router.push(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId!)}`);
+      router.push(`/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnostic.diagnosticSessionId)}&studentId=${encodeURIComponent(studentId!)}&assignmentId=${encodeURIComponent(assignmentId)}`);
       return;
     }
     setIndex((current) => current + 1);

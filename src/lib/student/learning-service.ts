@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { AiSource, GeneratedPracticePlan } from "@/lib/ai/contracts";
+import { withCurriculumCache } from "@/lib/content/curriculum-cache";
+import { buildDiagnosticSessionItems } from "@/lib/items/diagnostic-items";
 import { materializeGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
 import { scoreAnswer } from "@/lib/math/scoring";
 import { collectDiagnosticEvidence, nextMasteryLevel, selectDiagnosticGap, shouldRequeue, type DiagnosticEvidence } from "@/lib/student/learning-loop";
@@ -85,6 +87,14 @@ export type PersistedDiagnosticCompletionState =
   | { kind: "complete"; completion: PersistedDiagnosticCompletion }
   | PersistedDiagnosticPreparation;
 
+/** Safe, answer-free resume state returned only after cookie ownership checks. */
+export type PersistedLearnerResume =
+  | { kind: "start" }
+  | { kind: "diagnostic"; diagnosticSessionId: string }
+  | { kind: "diagnosis"; diagnosticSessionId: string }
+  | { kind: "practice"; practiceSessionId: string }
+  | { kind: "mastery" };
+
 export type GeneratedPersistedPlan = {
   targetSubskillId: string;
   misconceptionTag: string;
@@ -120,6 +130,52 @@ function configuredClient() {
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 
+/**
+ * Mastery is keyed by class as well as subskill, so every read and write needs
+ * the class that owns the work. The class is derived from the assignment or the
+ * practice lineage rather than accepted from the caller: one learner can sit in
+ * two classes covering the same topic, and only the assignment says which of
+ * them a given piece of work belongs to.
+ */
+async function classForAssignment(client: ConfiguredClient, assignmentId: string) {
+  return withCurriculumCache(`assignment-class:${assignmentId}`, async () => {
+    const { data, error } = await client.from("assignments").select("class_id").eq("id", assignmentId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const classId = (data as { class_id?: string } | null)?.class_id;
+    if (!classId) throw new Error("This assignment has no owning class.");
+    return classId;
+  });
+}
+
+/**
+ * Practice reaches its class through the diagnostic that generated it. That
+ * link is nullable, so fall back to the learner's enrollments and accept only
+ * an unambiguous match on the practice topic.
+ */
+async function classForPracticeSession(client: ConfiguredClient, practiceSessionId: string, studentId: string) {
+  const { data, error } = await client
+    .from("practice_sessions")
+    .select("topic_id, diagnostic_sessions(assignment_id)")
+    .eq("id", practiceSessionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const row = data as unknown as { topic_id: string | null; diagnostic_sessions: { assignment_id: string } | Array<{ assignment_id: string }> | null } | null;
+  if (!row) throw new Error("Practice session is unavailable.");
+  const diagnostic = Array.isArray(row.diagnostic_sessions) ? row.diagnostic_sessions[0] : row.diagnostic_sessions;
+  if (diagnostic?.assignment_id) return classForAssignment(client, diagnostic.assignment_id);
+
+  if (!row.topic_id) throw new Error("This practice session has no topic to resolve a class from.");
+  const { data: candidates, error: candidateError } = await client
+    .from("class_enrollments")
+    .select("class_id, classes!inner(assignments!inner(topic_id))")
+    .eq("student_id", studentId)
+    .eq("classes.assignments.topic_id", row.topic_id);
+  if (candidateError) throw new Error(candidateError.message);
+  const classIds = [...new Set(((candidates ?? []) as Array<{ class_id: string }>).map((entry) => entry.class_id))];
+  if (classIds.length !== 1) throw new Error("Could not resolve which class this practice belongs to.");
+  return classIds[0];
+}
+
 function asItem(item: DbItem): Item {
   return {
     id: item.id,
@@ -131,20 +187,108 @@ function asItem(item: DbItem): Item {
   };
 }
 
+/**
+ * The whole assignment's item bank, re-read on every submitted diagnostic answer
+ * to resolve one item. Only the rows are cached; each caller still gets freshly
+ * mapped items, so nothing downstream can write through to the cached copy.
+ */
 async function assignmentItems(client: ConfiguredClient, assignmentId: string) {
-  const { data, error } = await client
-    .from("assignment_items")
-    .select("position, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)")
-    .eq("assignment_id", assignmentId)
-    .order("position");
-  if (error) throw new Error(error.message);
-  return (data as unknown as AssignmentItemRow[]).flatMap((row) => row.items ? [{ position: row.position, item: asItem(row.items) }] : []);
+  const rows = await withCurriculumCache(`assignment-items:${assignmentId}`, async () => {
+    const { data, error } = await client
+      .from("assignment_items")
+      .select("position, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)")
+      .eq("assignment_id", assignmentId)
+      .order("position");
+    if (error) throw new Error(error.message);
+    return data as unknown as AssignmentItemRow[];
+  });
+  return rows.flatMap((row) => row.items ? [{ position: row.position, item: asItem(row.items) }] : []);
 }
 
+/** Signals a session whose items have not been written yet. Never surfaces to a caller. */
+class UnmaterializedSession extends Error {}
+
+/**
+ * The items belonging to one diagnostic session. Cacheable for the same reason
+ * the assignment bank is: once materialized, a session's items never change.
+ */
+async function diagnosticSessionItems(client: ConfiguredClient, diagnosticSessionId: string) {
+  const rows = await withCurriculumCache(`diagnostic-session-items:${diagnosticSessionId}`, async () => {
+    const { data, error } = await client
+      .from("diagnostic_session_items")
+      .select("position, items(id, subskill_id, prompt, answer_spec, distractor_map, visual_spec, difficulty)")
+      .eq("diagnostic_session_id", diagnosticSessionId)
+      .order("position");
+    if (error) throw new Error(error.message);
+    const rows = data as unknown as AssignmentItemRow[];
+    // An unmaterialized session reads as empty, and that state is not immutable:
+    // the rows land moments later. A resume racing a start would otherwise pin
+    // the empty for the whole TTL and send that learner to the seeded fallback
+    // while scoring used their real items. Rejecting keeps it out of the cache —
+    // a rejected load is evicted, never stored.
+    if (!rows.length) throw new UnmaterializedSession();
+    return rows;
+  }).catch((error: unknown) => {
+    if (error instanceof UnmaterializedSession) return [] as AssignmentItemRow[];
+    throw error;
+  });
+  return rows.flatMap((row) => row.items ? [{ position: row.position, item: asItem(row.items) }] : []);
+}
+
+/**
+ * The five items a session actually administered.
+ *
+ * Sessions started before per-session items existed own no rows and fall back to
+ * the assignment's seeded five — which is what those learners genuinely saw, so
+ * their evidence and teacher view stay truthful.
+ */
+async function administeredItems(client: ConfiguredClient, session: { id: string; assignmentId: string }) {
+  const own = await diagnosticSessionItems(client, session.id);
+  return own.length ? own : assignmentItems(client, session.assignmentId);
+}
+
+/**
+ * Writes this session's own five items, once. The RPC is idempotent under its own
+ * lock, so a retried or concurrent start never mints a second set nor reshuffles
+ * a check-in the learner is partway through.
+ */
+async function materializeDiagnosticSessionItems(input: {
+  client: ConfiguredClient;
+  diagnosticSessionId: string;
+  studentId: string;
+  assignmentId: string;
+}) {
+  const generated = buildDiagnosticSessionItems({
+    studentId: input.studentId,
+    assignmentId: input.assignmentId,
+    diagnosticSessionId: input.diagnosticSessionId,
+  });
+  const { error } = await input.client.rpc("materialize_diagnostic_session_items", {
+    p_diagnostic_session_id: input.diagnosticSessionId,
+    p_student_id: input.studentId,
+    p_items: generated.map(({ item, slotId }) => ({
+      id: item.id,
+      slotId,
+      subskillId: item.subskillId,
+      itemType: "generated_diagnostic",
+      prompt: item.prompt,
+      answerSpec: item.answerSpec,
+      distractorMap: item.distractorMap,
+      visualSpec: item.visualSpec ?? null,
+      difficulty: 1,
+    })),
+  });
+  if (error) throw new Error(`Could not prepare the diagnostic items: ${error.message}`);
+}
+
+/** An unfiltered read of the entire curriculum's subskills. The Map is rebuilt per caller so it stays theirs to mutate. */
 async function prerequisiteMap(client: ConfiguredClient) {
-  const { data, error } = await client.from("subskills").select("id, prerequisite_subskill_id");
-  if (error) throw new Error(error.message);
-  return new Map((data as Array<{ id: string; prerequisite_subskill_id: string | null }>).map((row) => [row.id, row.prerequisite_subskill_id]));
+  const rows = await withCurriculumCache("subskill-prerequisites", async () => {
+    const { data, error } = await client.from("subskills").select("id, prerequisite_subskill_id");
+    if (error) throw new Error(error.message);
+    return data as Array<{ id: string; prerequisite_subskill_id: string | null }>;
+  });
+  return new Map(rows.map((row) => [row.id, row.prerequisite_subskill_id]));
 }
 
 function isPrerequisiteOf(candidate: string, skillId: string, prerequisites: ReadonlyMap<string, string | null>): boolean {
@@ -156,19 +300,33 @@ function isPrerequisiteOf(candidate: string, skillId: string, prerequisites: Rea
   return false;
 }
 
-/** Every missed skill gets its own plan. Dependencies remain first and ties retain diagnostic order. */
-function orderedPracticeTargets(evidence: readonly DiagnosticEvidence[], prerequisites: ReadonlyMap<string, string | null>) {
-  const firstMissBySkill = new Map<string, { subskillId: string; misconceptionTag: string; order: number }>();
+/**
+ * The diagnostic establishes the ordering, not a lock. Missed skills come
+ * first; every other assessed skill below mastered remains available after it.
+ */
+function orderedPracticeTargets(
+  evidence: readonly DiagnosticEvidence[],
+  prerequisites: ReadonlyMap<string, string | null>,
+  existingLevels: ReadonlyMap<string, MasteryLevel>,
+) {
+  const firstEvidenceBySkill = new Map<string, { subskillId: string; misconceptionTag: string; order: number; priority: number }>();
   evidence.forEach((entry, order) => {
-    if (entry.isCorrect || firstMissBySkill.has(entry.subskillId)) return;
-    firstMissBySkill.set(entry.subskillId, {
+    const current = firstEvidenceBySkill.get(entry.subskillId);
+    const priority = entry.isCorrect ? 1 : 0;
+    if (current && current.priority <= priority) return;
+    firstEvidenceBySkill.set(entry.subskillId, {
       subskillId: entry.subskillId,
-      misconceptionTag: entry.misconceptionTag ?? "needs-practice",
+      misconceptionTag: entry.isCorrect ? "build-fluency" : entry.misconceptionTag ?? "needs-practice",
       order,
+      priority,
     });
   });
-  return [...firstMissBySkill.values()]
+  return [...firstEvidenceBySkill.values()]
+    // A diagnostic never lowers an already-mastered skill, so it is review,
+    // not part of this learner's required practice menu.
+    .filter((entry) => existingLevels.get(entry.subskillId) !== "mastered")
     .sort((left, right) => {
+      if (left.priority !== right.priority) return left.priority - right.priority;
       if (isPrerequisiteOf(left.subskillId, right.subskillId, prerequisites)) return -1;
       if (isPrerequisiteOf(right.subskillId, left.subskillId, prerequisites)) return 1;
       return left.order - right.order;
@@ -282,16 +440,109 @@ async function readPersistedDiagnosticCompletion(client: ConfiguredClient, input
   };
 }
 
+/**
+ * Resolves the next durable step for a cookie-bound learner. This uses the
+ * service client only after the route has authenticated the opaque demo
+ * cookie; it returns IDs and state, never answers, scoring, or item specs.
+ */
+export async function getPersistedLearnerResume(input: { studentId: string; assignmentId: string }): Promise<PersistedLearnerResume | null> {
+  const client = configuredClient();
+  if (!client) return null;
+  const { data: activeDiagnostic, error: diagnosticError } = await client
+    .from("diagnostic_sessions")
+    .select("id")
+    .eq("student_id", input.studentId)
+    .eq("assignment_id", input.assignmentId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (diagnosticError) throw new Error(diagnosticError.message);
+  if (activeDiagnostic?.id) {
+    const { data: answers, error: answerError } = await client
+      .from("student_responses")
+      .select("item_id")
+      .eq("diagnostic_session_id", activeDiagnostic.id);
+    if (answerError) throw new Error(answerError.message);
+    const administered = await administeredItems(client, { id: activeDiagnostic.id, assignmentId: input.assignmentId });
+    const answeredItemIds = new Set((answers ?? []).map((answer) => answer.item_id));
+    return answeredItemIds.size >= administered.length
+      ? { kind: "diagnosis", diagnosticSessionId: activeDiagnostic.id }
+      : { kind: "diagnostic", diagnosticSessionId: activeDiagnostic.id };
+  }
+
+  const { data: activePractice, error: practiceError } = await client
+    .from("practice_sessions")
+    .select("id, diagnostic_session_id")
+    .eq("student_id", input.studentId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (practiceError) throw new Error(practiceError.message);
+  if (activePractice?.diagnostic_session_id) {
+    return { kind: "diagnosis", diagnosticSessionId: activePractice.diagnostic_session_id };
+  }
+  if (activePractice?.id) return { kind: "practice", practiceSessionId: activePractice.id };
+
+  const { data: completedDiagnostic, error: completedError } = await client
+    .from("diagnostic_sessions")
+    .select("id")
+    .eq("student_id", input.studentId)
+    .eq("assignment_id", input.assignmentId)
+    .eq("status", "complete")
+    .limit(1)
+    .maybeSingle();
+  if (completedError) throw new Error(completedError.message);
+  return completedDiagnostic?.id ? { kind: "mastery" } : { kind: "start" };
+}
+
 export async function startPersistedDiagnostic(input: { studentId: string; assignmentId: string }) {
   const client = configuredClient();
   if (!client) return null;
-  const items = await assignmentItems(client, input.assignmentId);
-  if (!items.length) throw new Error("Diagnostic assignment has no items.");
-  const { data: existing, error: existingError } = await client.from("diagnostic_sessions").select("id").eq("student_id", input.studentId).eq("assignment_id", input.assignmentId).eq("status", "active").maybeSingle();
+  // Reuse this learner's newest session for the assignment, finished or not.
+  // Matching only `active` meant a learner who had already completed the
+  // check-in was handed a brand-new empty session and made to sit it again.
+  // Returning the completed one lets the caller see every item answered and
+  // move on to the diagnosis it already produced.
+  const { data: sessions, error: existingError } = await client
+    .from("diagnostic_sessions")
+    .select("id, status, started_at")
+    .eq("student_id", input.studentId)
+    .eq("assignment_id", input.assignmentId)
+    .in("status", ["active", "complete"])
+    .order("started_at", { ascending: false });
   if (existingError) throw new Error(existingError.message);
+  const candidates = (sessions ?? []) as Array<{ id: string; status: string }>;
+  const existing = candidates.find((session) => session.status === "active") ?? candidates[0];
   const diagnosticSessionId = existing?.id ?? (await client.from("diagnostic_sessions").insert({ student_id: input.studentId, assignment_id: input.assignmentId, status: "active" }).select("id").single()).data?.id;
   if (!diagnosticSessionId) throw new Error("Could not create a diagnostic session.");
-  return { diagnosticSessionId, assignmentId: input.assignmentId, items: items.map(({ position, item }) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position })) };
+  const { data: answers, error: answersError } = await client
+    .from("student_responses")
+    .select("item_id")
+    .eq("diagnostic_session_id", diagnosticSessionId);
+  if (answersError) throw new Error(answersError.message);
+  const answeredItemIds = [...new Set((answers ?? []).map((answer) => answer.item_id))];
+
+  // Only ever materialize into a session nobody has answered yet. A session that
+  // already holds responses predates per-session items, and minting items for it
+  // now would swap the questions out from under work already recorded against the
+  // seeded ones — the learner's answers would no longer match anything they saw.
+  if (!answeredItemIds.length) {
+    await materializeDiagnosticSessionItems({
+      client,
+      diagnosticSessionId,
+      studentId: input.studentId,
+      assignmentId: input.assignmentId,
+    });
+  }
+
+  const items = await administeredItems(client, { id: diagnosticSessionId, assignmentId: input.assignmentId });
+  if (!items.length) throw new Error("Diagnostic assignment has no items.");
+  return {
+    diagnosticSessionId,
+    assignmentId: input.assignmentId,
+    items: items.map(({ position, item }) => ({ id: item.id, prompt: item.prompt, subskillId: item.subskillId, visualSpec: item.visualSpec, position })),
+    answeredItemIds,
+  };
 }
 
 export async function recordPersistedDiagnosticResponse(input: { diagnosticSessionId: string; studentId: string; itemId: string; answer: string }) {
@@ -299,7 +550,7 @@ export async function recordPersistedDiagnosticResponse(input: { diagnosticSessi
   if (!client) return null;
   const { data: session, error: sessionError } = await client.from("diagnostic_sessions").select("student_id, assignment_id, status").eq("id", input.diagnosticSessionId).maybeSingle();
   if (sessionError || !session || session.student_id !== input.studentId || session.status !== "active") throw new Error("Diagnostic session is unavailable.");
-  const items = await assignmentItems(client, session.assignment_id);
+  const items = await administeredItems(client, { id: input.diagnosticSessionId, assignmentId: session.assignment_id });
   const item = items.find((entry) => entry.item.id === input.itemId)?.item;
   if (!item) throw new Error("Item is not part of this diagnostic.");
   const isCorrect = scoreAnswer(item, input.answer);
@@ -328,7 +579,7 @@ export async function preparePersistedDiagnosticCompletion(input: { diagnosticSe
     throw new Error("Diagnostic session is complete but its durable completion is unavailable.");
   }
 
-  const administered = await assignmentItems(client, session.assignment_id);
+  const administered = await administeredItems(client, { id: input.diagnosticSessionId, assignmentId: session.assignment_id });
   const { data: rawResponses, error: responseError } = await client
     .from("student_responses")
     .select("item_id, answer_raw, is_correct, submitted_at")
@@ -350,7 +601,20 @@ export async function preparePersistedDiagnosticCompletion(input: { diagnosticSe
     misconceptionTag: null,
     evidence: [],
   };
-  const targets = orderedPracticeTargets(evidence, prerequisites);
+  const assessedSkillIds = [...new Set(administered.map((entry) => entry.item.subskillId))];
+  const classId = await classForAssignment(client, session.assignment_id);
+  const { data: masteryRows, error: masteryError } = await client
+    .from("mastery")
+    .select("subskill_id, level")
+    .eq("student_id", input.studentId)
+    .eq("class_id", classId)
+    .in("subskill_id", assessedSkillIds);
+  if (masteryError) throw new Error(masteryError.message);
+  const existingLevels = new Map(
+    ((masteryRows ?? []) as Array<{ subskill_id: string; level: MasteryLevel }>)
+      .map((row) => [row.subskill_id, row.level]),
+  );
+  const targets = orderedPracticeTargets(evidence, prerequisites, existingLevels);
   if (!targets.length) {
     targets.push({ subskillId: gap.subskillId, misconceptionTag: gap.misconceptionTag ?? "needs-practice" });
   }
@@ -623,10 +887,13 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
     if (completionError) throw new Error(completionError.message);
   }
 
-  const { data: prior } = await client.from("mastery").select("level, evidence_count").eq("student_id", input.studentId).eq("subskill_id", item.subskillId).maybeSingle();
-  const { data: skill } = await client.from("subskills").select("prerequisite_subskill_id").eq("id", item.subskillId).maybeSingle();
-  const prerequisiteId = (skill as { prerequisite_subskill_id?: string | null } | null)?.prerequisite_subskill_id;
-  const { data: prerequisite } = prerequisiteId ? await client.from("mastery").select("level").eq("student_id", input.studentId).eq("subskill_id", prerequisiteId).maybeSingle() : { data: null };
+  const classId = await classForPracticeSession(client, input.practiceSessionId, input.studentId);
+  const { data: prior } = await client.from("mastery").select("level, evidence_count").eq("student_id", input.studentId).eq("class_id", classId).eq("subskill_id", item.subskillId).maybeSingle();
+  const prerequisiteId = await withCurriculumCache(`subskill-prerequisite:${item.subskillId}`, async () => {
+    const { data: skill } = await client.from("subskills").select("prerequisite_subskill_id").eq("id", item.subskillId).maybeSingle();
+    return (skill as { prerequisite_subskill_id?: string | null } | null)?.prerequisite_subskill_id ?? null;
+  });
+  const { data: prerequisite } = prerequisiteId ? await client.from("mastery").select("level").eq("student_id", input.studentId).eq("class_id", classId).eq("subskill_id", prerequisiteId).maybeSingle() : { data: null };
   const next = nextMasteryLevel(
     ((prior as { level?: MasteryLevel } | null)?.level ?? "not_started"),
     ((prior as { evidence_count?: number } | null)?.evidence_count ?? 0),
@@ -635,31 +902,35 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
   );
   const { error: masteryError } = await client.from("mastery").upsert({
     student_id: input.studentId,
+    class_id: classId,
     subskill_id: item.subskillId,
     level: next.level,
     evidence_count: next.evidenceCount,
     evidence_summary: isCorrect ? "Recorded a correct focused-practice response." : "Recorded an incorrect response; this item will return once later.",
     last_evaluated_at: new Date().toISOString(),
-  }, { onConflict: "student_id,subskill_id" });
+  }, { onConflict: "student_id,class_id,subskill_id" });
   if (masteryError) throw new Error(masteryError.message);
 
   const practice = await getPersistedPractice({ practiceSessionId: input.practiceSessionId, studentId: input.studentId });
   return { isCorrect, masteryLevel: next.level, fullSolutionUnlocked: isCorrect, practice };
 }
 
-export async function getPersistedStudentMastery(input: { studentId: string; topicId: string }) {
+export async function getPersistedStudentMastery(input: { studentId: string; topicId: string; classId: string }) {
   const client = configuredClient();
   if (!client) return null;
-  const { data: skills, error: skillError } = await client.from("subskills").select("id, name").eq("topic_id", input.topicId);
-  if (skillError) throw new Error(skillError.message);
-  const skillIds = (skills as Array<{ id: string; name: string }>).map((skill) => skill.id);
-  const { data: records, error: masteryError } = await client.from("mastery").select("subskill_id, level, evidence_summary").eq("student_id", input.studentId).in("subskill_id", skillIds);
+  const skills = await withCurriculumCache(`topic-subskills:${input.topicId}`, async () => {
+    const { data, error } = await client.from("subskills").select("id, name").eq("topic_id", input.topicId);
+    if (error) throw new Error(error.message);
+    return data as Array<{ id: string; name: string }>;
+  });
+  const skillIds = skills.map((skill) => skill.id);
+  const { data: records, error: masteryError } = await client.from("mastery").select("subskill_id, level, evidence_summary").eq("student_id", input.studentId).eq("class_id", input.classId).in("subskill_id", skillIds);
   if (masteryError) throw new Error(masteryError.message);
   const bySkill = new Map((records as Array<{ subskill_id: string; level: MasteryLevel; evidence_summary: string | null }>).map((record) => [record.subskill_id, record]));
   return {
     studentId: input.studentId,
     topicId: input.topicId,
-    skills: (skills as Array<{ id: string; name: string }>).map((skill) => {
+    skills: skills.map((skill) => {
       const record = bySkill.get(skill.id);
       const level = record?.level ?? "not_started";
       return {

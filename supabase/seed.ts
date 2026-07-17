@@ -8,6 +8,7 @@ import {
   canonicalTeacherGroupIds,
   canonicalTeacherPracticeItemIds,
   masteryLevels,
+  publicWalkthroughIds,
 } from "../src/lib/demo/contracts";
 
 loadEnvConfig(process.cwd());
@@ -21,6 +22,7 @@ if (!url || !serviceRoleKey) {
 
 const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
 const { classId, teacherName, fractionsTopicId, commonDenominatorSubskillId, diagnosticAssignmentId } = canonicalDemoIds;
+const { classId: walkthroughClassId } = publicWalkthroughIds;
 
 const students = canonicalDemoStudents.map((student) => ({
   id: student.id,
@@ -30,11 +32,11 @@ const students = canonicalDemoStudents.map((student) => ({
 }));
 
 const subskills = [
-  { id: "equivalent-fractions", topic_id: fractionsTopicId, slug: "equivalent-fractions", name: "Equivalent Fractions", description: "Recognize and generate equivalent fractions.", prerequisite_subskill_id: null },
-  { id: "fraction-number-line", topic_id: fractionsTopicId, slug: "fraction-number-line", name: "Fractions on a Number Line", description: "Locate fractions on a number line.", prerequisite_subskill_id: "equivalent-fractions" },
-  { id: commonDenominatorSubskillId, topic_id: fractionsTopicId, slug: commonDenominatorSubskillId, name: "Find a Common Denominator", description: "Rewrite fractions with a shared denominator.", prerequisite_subskill_id: "equivalent-fractions" },
-  { id: "add-unlike-denominators", topic_id: fractionsTopicId, slug: "add-unlike-denominators", name: "Add Unlike Denominators", description: "Add fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
-  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract Unlike Denominators", description: "Subtract fractions after finding a common denominator.", prerequisite_subskill_id: commonDenominatorSubskillId },
+  { id: "equivalent-fractions", topic_id: fractionsTopicId, slug: "equivalent-fractions", name: "Equivalent Fractions", prerequisite_subskill_id: null },
+  { id: "fraction-number-line", topic_id: fractionsTopicId, slug: "fraction-number-line", name: "Fractions on a Number Line", prerequisite_subskill_id: "equivalent-fractions" },
+  { id: commonDenominatorSubskillId, topic_id: fractionsTopicId, slug: commonDenominatorSubskillId, name: "Find a Common Denominator", prerequisite_subskill_id: "equivalent-fractions" },
+  { id: "add-unlike-denominators", topic_id: fractionsTopicId, slug: "add-unlike-denominators", name: "Add Unlike Denominators", prerequisite_subskill_id: commonDenominatorSubskillId },
+  { id: "subtract-unlike-denominators", topic_id: fractionsTopicId, slug: "subtract-unlike-denominators", name: "Subtract Unlike Denominators", prerequisite_subskill_id: commonDenominatorSubskillId },
 ] as const;
 
 const items = [
@@ -84,20 +86,34 @@ async function seed() {
   await assertNoError(await supabase.from("subskills").upsert(subskills.filter((subskill) => subskill.prerequisite_subskill_id === null)));
   await assertNoError(await supabase.from("subskills").upsert(subskills.filter((subskill) => subskill.prerequisite_subskill_id !== null)));
   await assertNoError(await supabase.from("students").upsert(students));
-  await assertNoError(await supabase.from("classes").upsert({ id: classId, name: "Ms. Rivera's fractions class", teacher_display_name: teacherName }));
-  // Capture temporary learners before resetting enrollment rows. They are
-  // deleted later in FK-safe order alongside all of their runtime records.
-  // This makes a reset complete even if a previous walkthrough was interrupted.
+  await assertNoError(await supabase.from("classes").upsert([
+    { id: classId, name: "Ms. Rivera's fractions class", teacher_display_name: teacherName },
+    { id: walkthroughClassId, name: "Public fractions walkthrough", teacher_display_name: "Rung walkthrough" },
+  ]));
+  // A reset removes temporary learners from both the legacy teacher class and
+  // the isolated walkthrough class. The reserved ID prefix also catches an
+  // interrupted/partially-cleaned session whose row is no longer present.
   const temporarySessions = await assertNoError(await supabase
     .from("demo_participant_sessions")
-    .select("student_id")
-    .eq("class_id", classId));
-  const temporaryStudentIds = [...new Set(temporarySessions.map((session) => session.student_id))];
+    .select("student_id"));
+  const prefixedTemporaryStudents = await assertNoError(await supabase
+    .from("students")
+    .select("id")
+    .like("id", "demo-learner-%"));
+  const temporaryStudentIds = [...new Set([
+    ...temporarySessions.map((session) => session.student_id),
+    ...prefixedTemporaryStudents.map((student) => student.id),
+  ])];
   const studentIds = [...new Set([...students.map((student) => student.id), ...temporaryStudentIds])];
   await assertNoError(await supabase.from("class_enrollments").delete().eq("class_id", classId));
+  if (temporaryStudentIds.length) {
+    await assertNoError(await supabase.from("class_enrollments").delete().in("student_id", temporaryStudentIds));
+  }
   await assertNoError(await supabase.from("class_enrollments").upsert(students.map((student) => ({ class_id: classId, student_id: student.id }))));
   await assertNoError(await supabase.from("items").upsert(items));
-  await assertNoError(await supabase.from("assignments").upsert({ id: diagnosticAssignmentId, class_id: classId, topic_id: fractionsTopicId, title: "Fractions check-in", mode: "diagnostic" }));
+  // The familiar assignment and item IDs stay intact for the existing
+  // student routes, but only public walkthrough learners use this assignment.
+  await assertNoError(await supabase.from("assignments").upsert({ id: diagnosticAssignmentId, class_id: walkthroughClassId, topic_id: fractionsTopicId, title: "Fractions check-in", mode: "diagnostic" }));
   await assertNoError(await supabase.from("assignment_items").delete().eq("assignment_id", diagnosticAssignmentId));
   await assertNoError(await supabase.from("assignment_items").upsert(canonicalDiagnosticItemIds.map((itemId, index) => ({ assignment_id: diagnosticAssignmentId, item_id: itemId, position: index + 1 }))));
 
@@ -127,6 +143,15 @@ async function seed() {
     await assertNoError(await supabase.from("practice_sessions").delete().in("id", sessionIds));
   }
   if (diagnosticSessionIds.length) {
+    // Per-session diagnostic items are no more part of the reusable bank than
+    // generated practice items are. Deleting the session cascades its link rows
+    // but would strand the `items` rows themselves, so they accumulate on every
+    // reset unless they go first.
+    const sessionItems = await assertNoError(await supabase.from("diagnostic_session_items").select("item_id").in("diagnostic_session_id", diagnosticSessionIds));
+    const sessionItemIds = sessionItems.map((entry) => entry.item_id);
+    if (sessionItemIds.length) {
+      await assertNoError(await supabase.from("items").delete().in("id", sessionItemIds));
+    }
     await assertNoError(await supabase.from("diagnostic_sessions").delete().in("id", diagnosticSessionIds));
   }
   await assertNoError(await supabase.from("attempt_submissions").delete().in("student_id", studentIds));
@@ -139,7 +164,7 @@ async function seed() {
 
   const masteryRows = students.flatMap((student) => canonicalDemoSubskillIds.map((subskillId, index) => {
     const level = masteryLevelsByStudent[student.id][index];
-    return { student_id: student.id, subskill_id: subskillId, level, evidence_count: level === "mastered" ? 2 : level === "not_started" ? 0 : 1, evidence_summary: levelSummary[level] };
+    return { student_id: student.id, class_id: classId, subskill_id: subskillId, level, evidence_count: level === "mastered" ? 2 : level === "not_started" ? 0 : 1, evidence_summary: levelSummary[level] };
   }));
   await assertNoError(await supabase.from("mastery").insert(masteryRows));
 

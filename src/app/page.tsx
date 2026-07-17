@@ -84,14 +84,6 @@ export default function HomePage() {
                   unlocks only after a real attempt. Teachers get tomorrow&rsquo;s small-group plan by
                   tonight.
                 </p>
-                <div className="mt-8 flex flex-wrap items-center gap-3">
-                  <Link href="/demo" className={buttonClasses("primary", "lg", "shadow-md hover:shadow-lg")}>
-                    Start the demo
-                  </Link>
-                  <Link href="/teacher/dashboard" className={buttonClasses("secondary", "lg")}>
-                    View the teacher dashboard
-                  </Link>
-                </div>
               </div>
 
               <div className="rounded-lg border border-border bg-surface p-5 shadow-sm">
@@ -113,6 +105,21 @@ export default function HomePage() {
                   Deterministic, stored evidence, never model-generated.
                 </p>
               </div>
+            </div>
+
+            <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3">
+              <Link href="/demo" className={buttonClasses("primary", "lg", "shadow-md hover:shadow-lg")}>
+                Start the demo
+              </Link>
+              <Link href="/teacher-workspace" className={buttonClasses("secondary", "lg")}>
+                Create a teacher workspace
+              </Link>
+              <Link
+                href="/teacher/dashboard"
+                className="text-sm font-medium text-accent underline-offset-4 hover:underline"
+              >
+                View sample class data <span aria-hidden="true">&rarr;</span>
+              </Link>
             </div>
           </Card>
         </section>
@@ -222,12 +229,18 @@ export default function HomePage() {
               Practice, not a test: try the student loop yourself, or open the class view
               teachers check before tomorrow&rsquo;s lesson.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-3">
               <Link href="/demo" className={buttonClasses("primary", "lg", "shadow-md hover:shadow-lg")}>
                 Start the demo
               </Link>
-              <Link href="/teacher/dashboard" className={buttonClasses("secondary", "lg")}>
-                Open the teacher dashboard
+              <Link href="/teacher-workspace" className={buttonClasses("secondary", "lg")}>
+                Create a teacher workspace
+              </Link>
+              <Link
+                href="/teacher/dashboard"
+                className="text-sm font-medium text-accent underline-offset-4 hover:underline"
+              >
+                View sample class data <span aria-hidden="true">&rarr;</span>
               </Link>
             </div>
           </div>

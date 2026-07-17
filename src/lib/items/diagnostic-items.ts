@@ -276,3 +276,39 @@ export function buildDiagnosticItems(studentId: string): Item[] {
   const random = createRandom(seedFromStudentId(studentId));
   return canonicalDiagnosticItemIds.map((id, index) => pick(random, FORM_BANK[index] as readonly ItemForm[])(random, id));
 }
+
+/** A generated item plus the slot it fills. The slot is the stable, canonical id. */
+export type DiagnosticSessionItem = { item: Item; slotId: string; position: number };
+
+/**
+ * The five items for one diagnostic session, each carrying a session-scoped id.
+ *
+ * Ids are unique per session because these rows are inserted into `items`, and a
+ * shared id would mean one learner's numbers overwriting another's. The slot id
+ * survives separately: it is what the heatmap columns, `selectDiagnosticGap`, and
+ * the seeded assignment all key off, and it must not move.
+ *
+ * The seed takes the session id, so re-sitting the check-in in another class
+ * draws a fresh five. Determinism here is a convenience for tests, not a
+ * correctness requirement — unlike `buildDiagnosticItems`, nothing re-derives
+ * these on read. The session's items are read back from the rows written at
+ * materialization, which is what keeps the learner's question, the scorer's
+ * answer key, and the teacher's evidence view the same object.
+ */
+export function buildDiagnosticSessionItems(input: {
+  studentId: string;
+  assignmentId: string;
+  diagnosticSessionId: string;
+}): DiagnosticSessionItem[] {
+  const random = createRandom(
+    seedFromStudentId(`${input.studentId}:${input.assignmentId}:${input.diagnosticSessionId}`),
+  );
+  return canonicalDiagnosticItemIds.map((slotId, index) => {
+    const built = pick(random, FORM_BANK[index] as readonly ItemForm[])(random, slotId);
+    return {
+      item: { ...built, id: `${slotId}--${input.diagnosticSessionId}` },
+      slotId,
+      position: index + 1,
+    };
+  });
+}

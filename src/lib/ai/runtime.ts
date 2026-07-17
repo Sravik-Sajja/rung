@@ -47,6 +47,42 @@ export interface AiModelConfig {
   item_wrap?: string;
 }
 
+/**
+ * `live_first` is architecture.md §6's original order: call the model, and treat
+ * a verified cache entry only as an outage net. `cache_first` serves a verified
+ * entry without calling the model at all.
+ *
+ * Cache-first is correct only where the output is a pure function of the cache
+ * key, so a stored entry is indistinguishable from a fresh call. Where a hit
+ * would be a coincidence (work analysis) or a stale decision would be unsafe
+ * (attempt verification), live-first stays.
+ */
+export type AiCacheMode = "cache_first" | "live_first";
+
+export type AiCacheConfig = Partial<Record<AiFeature, AiCacheMode>> & { defaultMode?: AiCacheMode };
+
+export const DEFAULT_AI_CACHE_MODES: Readonly<Record<AiFeature, AiCacheMode>> = {
+  // A hint is a pure function of item, attempt, and level. Two learners who make
+  // the same mistake on the same item deserve the same hint, so a repeat is
+  // identical work and the model does not belong on that path.
+  tutor_hint: "cache_first",
+  // The same deterministic evidence renders the same explanation.
+  diagnosis_explanation: "cache_first",
+  // architecture.md §9.4 already specifies cache-first for the group plan.
+  teacher_lesson: "cache_first",
+  // Keyed by the learner's own typed work, so a hit means one learner resubmitted
+  // identical text. There is no reuse to win, and serving one learner's coaching
+  // to another is a boundary worth keeping shut.
+  work_analysis: "live_first",
+  // Fail-closed by design (§9.3). A cached unlock decision must never stand in
+  // for a fresh one.
+  attempt_verification: "live_first",
+  // Plans are keyed per learner and persisted downstream with their own
+  // provenance; regenerating is cheap relative to serving a stale plan.
+  practice_plan: "live_first",
+  item_wrap: "live_first",
+};
+
 export interface AiRunLookup {
   feature: AiFeature;
   inputHash: string;
@@ -84,6 +120,7 @@ export interface AiAdapterOptions {
   completionClient?: StructuredCompletionClient | null;
   runStore?: AiRunStore;
   models?: AiModelConfig;
+  cacheModes?: AiCacheConfig;
 }
 
 const diagnosisPayloadSchema = z.object({
@@ -116,8 +153,13 @@ const teacherLessonPayloadSchema = teacherLessonDraftSchema.omit({ source: true,
 type ResolvedPayload<Payload> = { payload: Payload; source: AiSource; aiRunId: string };
 
 /**
- * Runs a structured response with the demo-safe priority order:
- * live, then a prior valid cache entry, then a deterministic fallback.
+ * Runs a structured response with a demo-safe priority order. A `live_first`
+ * feature calls the model, then falls back to a verified cache entry, then to a
+ * deterministic fixture. A `cache_first` feature checks the cache before
+ * spending a model call, but is otherwise identical.
+ *
+ * Every cached payload is re-parsed and re-validated on the way out, so an entry
+ * that was safe when stored cannot bypass a leak check that has since tightened.
  */
 async function resolveStructuredPayload<Payload>(input: {
   feature: AiFeature;
@@ -128,10 +170,44 @@ async function resolveStructuredPayload<Payload>(input: {
   request: Omit<StructuredCompletionRequest, "model" | "schema">;
   completionClient: StructuredCompletionClient | null;
   runStore: AiRunStore;
+  cacheMode: AiCacheMode;
   fallback: () => Payload;
   validate?: (payload: Payload) => void;
 }): Promise<ResolvedPayload<Payload>> {
   const startedAt = Date.now();
+
+  const readCache = async (): Promise<ResolvedPayload<Payload> | null> => {
+    try {
+      const cached = await input.runStore.findValid({
+        feature: input.feature,
+        inputHash: input.inputHash,
+        promptVersion: input.promptVersion,
+      });
+      if (cached === null) return null;
+      const payload = input.schema.parse(cached);
+      input.validate?.(payload);
+      const aiRunId = await recordSafely(input.runStore, {
+        feature: input.feature,
+        inputHash: input.inputHash,
+        promptVersion: input.promptVersion,
+        model: input.model,
+        status: "cache_hit",
+        latencyMs: Date.now() - startedAt,
+        outputJson: payload,
+      });
+      return { payload, source: "cache", aiRunId };
+    } catch {
+      // A malformed or now-unsafe cache entry must never block the live call or
+      // the deterministic fallback.
+      return null;
+    }
+  };
+
+  const cacheFirst = input.cacheMode === "cache_first";
+  if (cacheFirst) {
+    const hit = await readCache();
+    if (hit) return hit;
+  }
 
   if (input.completionClient) {
     try {
@@ -165,28 +241,11 @@ async function resolveStructuredPayload<Payload>(input: {
     }
   }
 
-  try {
-    const cached = await input.runStore.findValid({
-      feature: input.feature,
-      inputHash: input.inputHash,
-      promptVersion: input.promptVersion,
-    });
-    if (cached !== null) {
-      const payload = input.schema.parse(cached);
-      input.validate?.(payload);
-      const aiRunId = await recordSafely(input.runStore, {
-        feature: input.feature,
-        inputHash: input.inputHash,
-        promptVersion: input.promptVersion,
-        model: input.model,
-        status: "cache_hit",
-        latencyMs: Date.now() - startedAt,
-        outputJson: payload,
-      });
-      return { payload, source: "cache", aiRunId };
-    }
-  } catch {
-    // A malformed cache entry must not prevent the deterministic fallback.
+  // A cache-first feature already missed above; looking again would only repeat
+  // the same query for the same answer.
+  if (!cacheFirst) {
+    const hit = await readCache();
+    if (hit) return hit;
   }
 
   const payload = input.fallback();
@@ -236,15 +295,43 @@ function workAnalysisInputHash(input: AnalyzeWorkInput): string {
 }
 
 /**
- * Tutor protection is intentionally absent. It is used only to reject output,
- * never to influence a model request, cache payload, or ai_runs record.
+ * The key covers exactly what the model is asked, and nothing else.
+ *
+ * studentId is deliberately absent. A hint is a function of the item, the
+ * attempt, and the level — identity does not change a single word of it — so
+ * keying on the learner would fragment the cache one entry per person and
+ * guarantee that a class making the same mistake never reuses anything.
+ *
+ * Tutor protection is absent for a different reason: it is used only to reject
+ * output, never to influence a model request, cache payload, or ai_runs record.
  */
 function tutorHintInputHash(input: TutorHintInput): string {
   return hashInput({
-    studentId: input.studentId,
     item: input.item,
     learnerAttempt: input.attempt,
     level: input.level,
+    promptVersion: input.promptVersion,
+  });
+}
+
+/**
+ * Keyed on the deterministic evidence the model actually receives. studentId and
+ * assignmentId are excluded for the same reason as the tutor key: two learners
+ * with identical evidence get an identical explanation, and keying on identity
+ * would mean neither could ever reuse the other's.
+ */
+function diagnosisInputHash(input: {
+  gradeBand: string;
+  targetSubskillId: string;
+  supportedMisconceptionTags: string[];
+  evidence: unknown;
+  promptVersion: string;
+}): string {
+  return hashInput({
+    gradeBand: input.gradeBand,
+    targetSubskillId: input.targetSubskillId,
+    supportedMisconceptionTags: input.supportedMisconceptionTags,
+    evidence: input.evidence,
     promptVersion: input.promptVersion,
   });
 }
@@ -300,6 +387,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
     : options.completionClient;
   const runStore = options.runStore ?? createRuntimeAiRunStore();
   const models = options.models ?? readModelConfig();
+  const cacheModes = options.cacheModes ?? readAiCacheConfig();
 
   return {
     async diagnoseExplanation(input) {
@@ -312,11 +400,12 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       const result = await resolveStructuredPayload({
         feature: "diagnosis_explanation",
         promptVersion: input.promptVersion,
-        inputHash: hashInput(input),
+        inputHash: diagnosisInputHash(input),
         model: modelFor("diagnosis_explanation", models),
         schema: diagnosisPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("diagnosis_explanation", cacheModes),
         request: {
           schemaName: "diagnosis_explanation",
           system: "You explain a diagnosed middle-school fraction misconception. Use only the supplied misconception tags and never grade or change mastery.",
@@ -358,6 +447,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         schema: tutorPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("tutor_hint", cacheModes),
         request: {
           schemaName: "tutor_hint",
           system: `You are a safe middle-school math tutor. Return exactly one ${input.level} support message; never combine levels.
@@ -398,6 +488,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         schema: attemptPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("attempt_verification", cacheModes),
         request: {
           schemaName: "attempt_verification",
           system: "Verify only whether a learner attempt is on-topic and non-trivial. Do not score the math, unlock content, or infer mastery.",
@@ -423,6 +514,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
     async generatePracticePlan(input) {
       const result = await resolveStructuredPayload({
         feature: "practice_plan", promptVersion: input.promptVersion, inputHash: hashInput(input), model: modelFor("practice_plan", models), schema: practicePlanPayloadSchema, completionClient, runStore,
+        cacheMode: cacheModeFor("practice_plan", cacheModes),
         request: {
           schemaName: "practice_plan",
           system: "Create 3 or 4 middle-school fraction practice items for the diagnosed target skill. Use number_line for fraction-number-line, equivalent_fraction for equivalent-fractions, common_denominator for find-common-denominator, and fraction_operation (with unlike denominators) for addition or subtraction skills. Return only the schema; never include answers, solutions, or explanations.",
@@ -445,6 +537,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         schema: teacherLessonPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("teacher_lesson", cacheModes),
         request: {
           schemaName: "teacher_lesson",
           system: [
@@ -490,6 +583,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         schema: workAnalysisPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("work_analysis", cacheModes),
         request: {
           schemaName: "work_analysis",
           system: [
@@ -539,6 +633,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         schema: itemWrapPayloadSchema,
         completionClient,
         runStore,
+        cacheMode: cacheModeFor("item_wrap", cacheModes),
         request: {
           schemaName: "item_wrap",
           system: "Rewrite the learner-facing wording only. Preserve every number, operation, and mathematical task. Return no answer or explanation.",
@@ -612,6 +707,34 @@ export function modelFor(feature: AiFeature, models: AiModelConfig): string {
   // same as an unset value: passing an empty model name makes the provider
   // reject the request and silently sends the learner to the fixed fallback.
   return models[feature]?.trim() || models.defaultModel?.trim() || DEFAULT_AI_MODEL;
+}
+
+/**
+ * An unrecognised or blank value is ignored rather than defaulted, so a typo in
+ * `.env.local` cannot silently move a feature off the order chosen in
+ * DEFAULT_AI_CACHE_MODES.
+ */
+function parseCacheMode(value: string | undefined): AiCacheMode | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return (["cache_first", "live_first"] as const).find((mode) => mode === normalized);
+}
+
+export function readAiCacheConfig(env: NodeJS.ProcessEnv = process.env): AiCacheConfig {
+  return {
+    defaultMode: parseCacheMode(env.OPENAI_CACHE_MODE),
+    diagnosis_explanation: parseCacheMode(env.OPENAI_CACHE_MODE_DIAGNOSIS),
+    tutor_hint: parseCacheMode(env.OPENAI_CACHE_MODE_TUTOR_HINT),
+    attempt_verification: parseCacheMode(env.OPENAI_CACHE_MODE_ATTEMPT_VERIFICATION),
+    work_analysis: parseCacheMode(env.OPENAI_CACHE_MODE_WORK_ANALYSIS),
+    practice_plan: parseCacheMode(env.OPENAI_CACHE_MODE_PRACTICE_PLAN),
+    teacher_lesson: parseCacheMode(env.OPENAI_CACHE_MODE_TEACHER_LESSON),
+    item_wrap: parseCacheMode(env.OPENAI_CACHE_MODE_ITEM_WRAP),
+  };
+}
+
+/** A per-feature override wins over a global one, which wins over the built-in default. */
+export function cacheModeFor(feature: AiFeature, config: AiCacheConfig): AiCacheMode {
+  return config[feature] ?? config.defaultMode ?? DEFAULT_AI_CACHE_MODES[feature];
 }
 
 export function hashInput(input: unknown): string {

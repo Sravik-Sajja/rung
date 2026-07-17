@@ -15,6 +15,15 @@ export const canonicalDemoIds = {
   diagnosticAssignmentId: "fractions-diagnostic-v1",
 } as const;
 
+/**
+ * Public walkthrough learners never join the canonical teacher roster. The
+ * diagnostic assignment deliberately keeps its stable canonical ID and item
+ * bank, but is attached to this isolated class by the seed and migration.
+ */
+export const publicWalkthroughIds = {
+  classId: "fractions-walkthrough-class",
+} as const;
+
 export const masteryLevels = [
   "not_started",
   "needs_support",

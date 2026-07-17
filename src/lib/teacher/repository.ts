@@ -27,8 +27,49 @@ type DurableEvidenceRow = {
   is_correct: boolean;
   context: string;
   submitted_at: string;
+  diagnostic_session_id?: string | null;
+  practice_session_id?: string | null;
   items: DurableEvidenceItem | DurableEvidenceItem[] | null;
 };
+
+type ClassResponseScope = { diagnosticSessionIds: Set<string>; practiceSessionIds: Set<string> };
+
+/**
+ * The response rows that belong to one class.
+ *
+ * A learner can sit in the public walkthrough and a teacher's class at the same
+ * time, and `student_responses` carries no class of its own: an answer reaches a
+ * class only through the diagnostic session that owns it, or through the
+ * practice session that diagnostic generated. Without this scoping a teacher
+ * sees answers their class never assigned.
+ */
+async function classResponseScope(
+  client: NonNullable<ReturnType<typeof configuredClient>>,
+  classId: string,
+  studentIds: readonly string[],
+): Promise<ClassResponseScope> {
+  const empty: ClassResponseScope = { diagnosticSessionIds: new Set(), practiceSessionIds: new Set() };
+  const { data: assignments, error: assignmentError } = await client.from("assignments").select("id").eq("class_id", classId);
+  if (assignmentError) throw new Error(`Could not scope teacher evidence: ${assignmentError.message}`);
+  const assignmentIds = ((assignments ?? []) as Array<{ id: string }>).map((assignment) => assignment.id);
+  if (!assignmentIds.length) return empty;
+  const { data: diagnostics, error: diagnosticError } = await client
+    .from("diagnostic_sessions").select("id").in("assignment_id", assignmentIds).in("student_id", [...studentIds]);
+  if (diagnosticError) throw new Error(`Could not scope teacher evidence: ${diagnosticError.message}`);
+  const diagnosticSessionIds = new Set(((diagnostics ?? []) as Array<{ id: string }>).map((session) => session.id));
+  if (!diagnosticSessionIds.size) return empty;
+  const { data: practices, error: practiceError } = await client
+    .from("practice_sessions").select("id").in("diagnostic_session_id", [...diagnosticSessionIds]);
+  if (practiceError) throw new Error(`Could not scope teacher evidence: ${practiceError.message}`);
+  return { diagnosticSessionIds, practiceSessionIds: new Set(((practices ?? []) as Array<{ id: string }>).map((session) => session.id)) };
+}
+
+function isInClassScope(row: DurableEvidenceRow, scope: ClassResponseScope) {
+  if (row.diagnostic_session_id) return scope.diagnosticSessionIds.has(row.diagnostic_session_id);
+  if (row.practice_session_id) return scope.practiceSessionIds.has(row.practice_session_id);
+  // An answer with no session lineage cannot be attributed to this class.
+  return false;
+}
 
 const EVIDENCE_ITEM_COLUMNS = "items!inner(subskill_id, prompt, answer_spec, visual_spec)";
 
@@ -80,7 +121,12 @@ export async function getTeacherStudentEvidence(studentId: string): Promise<Teac
   return { studentId, attemptsBySubskill: teacherEvidenceBySubskill(attempts) };
 }
 
-async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Promise<Record<string, TeacherStudentEvidence["attemptsBySubskill"]>> {
+/**
+ * Shared by the sample class dashboard and by a teacher workspace roster.
+ * `classId` is required: it is the only thing keeping a learner's work in
+ * another class — including the public walkthrough — out of this teacher's view.
+ */
+export async function getTeacherEvidenceByStudentIds(studentIds: readonly string[], classId: string): Promise<Record<string, TeacherStudentEvidence["attemptsBySubskill"]>> {
   const uniqueStudentIds = [...new Set(studentIds)];
   if (!uniqueStudentIds.length) return {};
   const client = configuredClient();
@@ -90,9 +136,10 @@ async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Pr
       teacherEvidenceBySubskill(getDemoStudentResponseEvidence(studentId)),
     ]));
   }
+  const scope = await classResponseScope(client, classId, uniqueStudentIds);
   const { data, error } = await client
     .from("student_responses")
-    .select(`id, student_id, item_id, answer_raw, is_correct, context, submitted_at, ${EVIDENCE_ITEM_COLUMNS}`)
+    .select(`id, student_id, item_id, answer_raw, is_correct, context, submitted_at, diagnostic_session_id, practice_session_id, ${EVIDENCE_ITEM_COLUMNS}`)
     .in("student_id", uniqueStudentIds)
     .in("context", ["diagnostic", "practice"])
     .order("submitted_at", { ascending: false })
@@ -102,6 +149,7 @@ async function getTeacherEvidenceByStudentIds(studentIds: readonly string[]): Pr
   for (const raw of (data ?? []) as Array<DurableEvidenceRow & { student_id: string }>) {
     const item = Array.isArray(raw.items) ? raw.items[0] : raw.items;
     if (!item || (raw.context !== "diagnostic" && raw.context !== "practice")) continue;
+    if (!isInClassScope(raw, scope)) continue;
     const bySkill = grouped[raw.student_id];
     if (!bySkill) continue; // defense in depth: never project another student's evidence.
     (bySkill[item.subskill_id] ??= []).push({
@@ -188,7 +236,7 @@ export async function getTeacherDashboard(classId: string = canonicalDemoIds.cla
     groups: groupStudentsByNeed(cells),
     // Scope the evidence query to the students already returned by this class
     // dashboard. It cannot introduce an answer from an unrelated student.
-    responseEvidenceByStudent: await getTeacherEvidenceByStudentIds(dashboardStudents.map((student) => student.id)),
+    responseEvidenceByStudent: await getTeacherEvidenceByStudentIds(dashboardStudents.map((student) => student.id), classId),
   };
 }
 
