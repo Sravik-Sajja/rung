@@ -18,7 +18,7 @@ export type DemoPracticePlanSummary = {
   firstItemId?: string;
   status?: "active" | "complete";
 };
-type DiagnosticCompletion = { diagnosis: { selectedSubskillId: string; misconceptionTag: string; evidence: ReturnType<typeof collectDiagnosticEvidence>; practicePlanTargets: Array<{ subskillId: string; misconceptionTag: string }>; observation: string; explanation: string; nextStep: string; explanationSource: "fallback" }; practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number }; practicePlans?: DemoPracticePlanSummary[] };
+type DiagnosticCompletion = { diagnosis: { selectedSubskillId: string; misconceptionTag: string; evidence: ReturnType<typeof collectDiagnosticEvidence>; practicePlanTargets: Array<{ subskillId: string; misconceptionTag: string }>; observation: string; explanation: string; nextStep: string; explanationSource: "fallback" }; practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number }; practicePlans?: DemoPracticePlanSummary[]; allMastered?: boolean };
 // `items` is snapshotted onto the run at start: the five questions are built per student, so
 // scoring and completion must read back the exact items that learner was shown, never rebuild them.
 type DiagnosticRun = { id: string; studentId: string; assignmentId: string; items: Item[]; answers: Map<string, { answer: string; isCorrect: boolean; usedHint: boolean }>; completion?: DiagnosticCompletion; practicePlanGeneration?: Promise<DiagnosticCompletion> };
@@ -251,6 +251,27 @@ export function completeDemoDiagnostic(input: { diagnosticSessionId: string; stu
     misconceptionTag: null,
     evidence: [],
   };
+  if (!practicePlanTargets.length) {
+    const completion: DiagnosticCompletion = {
+      diagnosis: {
+        selectedSubskillId: gap.subskillId,
+        misconceptionTag: gap.misconceptionTag ?? "all-mastered",
+        evidence: gap.evidence,
+        practicePlanTargets,
+        observation: "Your check-in confirms that these skills are already mastered.",
+        explanation: "You do not need another focused practice set right now.",
+        nextStep: "View your skill climb.",
+        explanationSource: "fallback",
+      },
+      // Kept for the route's stable response shape. No session is created or
+      // exposed when every assessed skill is already mastered.
+      practiceSession: { id: "all-mastered", status: "active", firstItemId: null, itemCount: 0 },
+      practicePlans: [],
+      allMastered: true,
+    };
+    run.completion = completion;
+    return completion;
+  }
   const selected = selectPracticeItems(demoItems, gap.subskillId, prerequisites, 4);
 
   // Any question the student needed a hint on isn't "known yet" — so resurface more of exactly that

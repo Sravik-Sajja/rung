@@ -30,6 +30,7 @@ import { attemptVerificationFallback, getTutorHintFallback, mayaDiagnosisFallbac
 import { getMayaDiagnosisContent } from "@/lib/content/maya-fractions";
 import { containsAnswerLeak, containsGenericTutorLeak, containsTutorHintLeak } from "@/lib/ai/leakage";
 import { generatedPracticePlanFallback, validateGeneratedPracticePlan } from "@/lib/items/generated-practice-plan";
+import { allowLiveAiCall } from "@/lib/ai/rate-limit";
 
 export type AiFeature = "diagnosis_explanation" | "tutor_hint" | "attempt_verification" | "work_analysis" | "practice_plan" | "teacher_lesson" | "item_wrap";
 export type AiRunStatus = "valid" | "live_failed" | "cache_hit" | "fallback";
@@ -171,6 +172,7 @@ async function resolveStructuredPayload<Payload>(input: {
   completionClient: StructuredCompletionClient | null;
   runStore: AiRunStore;
   cacheMode: AiCacheMode;
+  canCallLive?: () => boolean;
   fallback: () => Payload;
   validate?: (payload: Payload) => void;
 }): Promise<ResolvedPayload<Payload>> {
@@ -209,7 +211,7 @@ async function resolveStructuredPayload<Payload>(input: {
     if (hit) return hit;
   }
 
-  if (input.completionClient) {
+  if (input.completionClient && (input.canCallLive?.() ?? true)) {
     try {
       const raw = await input.completionClient.complete({
         ...input.request,
@@ -406,6 +408,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("diagnosis_explanation", cacheModes),
+        canCallLive: () => allowLiveAiCall("diagnosis_explanation", input.studentId),
         request: {
           schemaName: "diagnosis_explanation",
           system: "You explain a diagnosed middle-school fraction misconception. Use only the supplied misconception tags and never grade or change mastery.",
@@ -448,6 +451,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("tutor_hint", cacheModes),
+        canCallLive: () => allowLiveAiCall("tutor_hint", input.studentId),
         request: {
           schemaName: "tutor_hint",
           system: `You are a safe middle-school math tutor. Return exactly one ${input.level} support message; never combine levels.
@@ -489,6 +493,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("attempt_verification", cacheModes),
+        canCallLive: () => allowLiveAiCall("attempt_verification", input.studentId),
         request: {
           schemaName: "attempt_verification",
           system: "Verify only whether a learner attempt is on-topic and non-trivial. Do not score the math, unlock content, or infer mastery.",
@@ -515,6 +520,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
       const result = await resolveStructuredPayload({
         feature: "practice_plan", promptVersion: input.promptVersion, inputHash: hashInput(input), model: modelFor("practice_plan", models), schema: practicePlanPayloadSchema, completionClient, runStore,
         cacheMode: cacheModeFor("practice_plan", cacheModes),
+        canCallLive: () => allowLiveAiCall("practice_plan", input.studentId),
         request: {
           schemaName: "practice_plan",
           system: "Create 3 or 4 middle-school fraction practice items for the diagnosed target skill. Use number_line for fraction-number-line, equivalent_fraction for equivalent-fractions, common_denominator for find-common-denominator, and fraction_operation (with unlike denominators) for addition or subtraction skills. Return only the schema; never include answers, solutions, or explanations.",
@@ -538,6 +544,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("teacher_lesson", cacheModes),
+        canCallLive: () => allowLiveAiCall("teacher_lesson", input.groupLabel),
         request: {
           schemaName: "teacher_lesson",
           system: [
@@ -583,6 +590,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("work_analysis", cacheModes),
+        canCallLive: () => allowLiveAiCall("work_analysis", input.studentId),
         request: {
           schemaName: "work_analysis",
           system: [
@@ -633,6 +641,7 @@ export function createAiAdapter(options: AiAdapterOptions = {}): RungAiAdapter {
         completionClient,
         runStore,
         cacheMode: cacheModeFor("item_wrap", cacheModes),
+        canCallLive: () => allowLiveAiCall("item_wrap", input.item.id),
         request: {
           schemaName: "item_wrap",
           system: "Rewrite the learner-facing wording only. Preserve every number, operation, and mathematical task. Return no answer or explanation.",

@@ -72,6 +72,7 @@ export type PersistedDiagnosticCompletion = {
     itemCount: number;
   };
   practicePlans: PracticePlanSummary[];
+  allMastered?: boolean;
 };
 
 export type PersistedDiagnosticPreparation = {
@@ -383,7 +384,22 @@ async function readPersistedDiagnosticCompletion(client: ConfiguredClient, input
     .order("position");
   if (planError) throw new Error(planError.message);
   const plans = (planData ?? []) as PersistedPlanRow[];
-  if (!plans.length) throw new Error("Diagnostic completion is missing its practice plans.");
+  if (!plans.length) {
+    return {
+      diagnosis: {
+        selectedSubskillId: completion.selected_subskill_id,
+        misconceptionTag: completion.misconception_tag,
+        evidence: asEvidence(completion.evidence),
+        observation: completion.observation,
+        explanation: completion.explanation,
+        nextStep: completion.next_step,
+        explanationSource: asAiSource(completion.explanation_source),
+      },
+      practiceSession: { id: "all-mastered", status: "complete", firstItemId: "", itemCount: 0 },
+      practicePlans: [],
+      allMastered: true,
+    };
+  }
 
   const planIds = plans.map((plan) => plan.id);
   const [{ data: sessionData, error: sessionError }, { data: itemData, error: itemError }] = await Promise.all([
@@ -615,9 +631,6 @@ export async function preparePersistedDiagnosticCompletion(input: { diagnosticSe
       .map((row) => [row.subskill_id, row.level]),
   );
   const targets = orderedPracticeTargets(evidence, prerequisites, existingLevels);
-  if (!targets.length) {
-    targets.push({ subskillId: gap.subskillId, misconceptionTag: gap.misconceptionTag ?? "needs-practice" });
-  }
 
   return {
     kind: "prepared",
@@ -744,6 +757,38 @@ export async function finalizePersistedDiagnosticCompletion(input: {
 
   const durable = await readPersistedDiagnosticCompletion(client, input.preparation);
   if (!durable) throw new Error("Generated practice completion was not persisted.");
+  return durable;
+}
+
+/** Records a completed check-in with no practice sessions when every assessed skill is already mastered. */
+export async function finalizePersistedAllMasteredDiagnostic(input: {
+  preparation: PersistedDiagnosticPreparation;
+  narrative: Pick<CompletionDiagnosis, "observation" | "explanation" | "nextStep" | "explanationSource"> & { explanationAiRunRef?: string };
+}): Promise<PersistedDiagnosticCompletion> {
+  const client = configuredClient();
+  if (!client) throw new Error("Supabase persistence is unavailable.");
+  const existing = await readPersistedDiagnosticCompletion(client, input.preparation);
+  if (existing) return existing;
+  if (input.preparation.targets.length) throw new Error("A no-practice completion requires every assessed skill to be mastered.");
+  const completionPayload = {
+    selectedSubskillId: input.preparation.diagnosis.selectedSubskillId,
+    misconceptionTag: input.preparation.diagnosis.misconceptionTag,
+    evidence: input.preparation.diagnosis.evidence,
+    observation: input.narrative.observation,
+    explanation: input.narrative.explanation,
+    nextStep: input.narrative.nextStep,
+    explanationSource: input.narrative.explanationSource,
+    explanationAiRunRef: input.narrative.explanationAiRunRef,
+    completionVersion: "diagnostic-completion-v1",
+  };
+  const { error } = await client.rpc("finalize_mastered_diagnostic_completion", {
+    p_diagnostic_session_id: input.preparation.diagnosticSessionId,
+    p_student_id: input.preparation.studentId,
+    p_completion: completionPayload,
+  });
+  if (error) throw new Error(error.message);
+  const durable = await readPersistedDiagnosticCompletion(client, input.preparation);
+  if (!durable) throw new Error("Mastered diagnostic completion was not persisted.");
   return durable;
 }
 

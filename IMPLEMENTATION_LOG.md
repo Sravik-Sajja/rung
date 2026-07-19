@@ -635,3 +635,24 @@ The per-learner question bank in `src/lib/items/diagnostic-items.ts` already exi
 - **There is no record of which migrations have been applied to the hosted project.** There is no `supabase/config.toml`, no migration-tracking table, and no runner script — migrations are applied by hand. `018` and `019` are applied; the state of `011`-`017` is unverified. This is the gap behind the unchecked "Exercise the real Supabase deployment path" item above.
 - The number-line slot's two forms share prompt text, so that one question can look unchanged across two sittings even though its visual differs; its operand pool is also the smallest (denominators 2, 4, 5). Widening `FORM_BANK` for that slot would make the reroll visible on every question.
 - `assignment_items` is now a slot list rather than a description of what any learner saw. Its name and its `architecture.md` row have been updated to say so, but the seeded five must remain: `014`/`016` `raise exception` without them.
+
+## 2026-07-19 — Devpost handoff and mastered-check-in outcome
+
+### Completed
+
+- Rewrote `README.md` as a judge-ready handoff: local/demo and Supabase setup, environment variables, student and teacher-workspace walkthroughs, test access, feature checklist, known limits, and the Codex/GPT-5.6 implementation story.
+- Added an explicit **All skills mastered** result screen. A learner with every assessed skill already mastered receives no invented fallback practice plan and can go directly to their skill climb.
+- Added `022_mastered_diagnostic_completion.sql` plus the durable completion RPC, so the no-practice outcome is recorded atomically in Supabase as well as in the local demo flow.
+- Added process-local, per-actor live-AI limits at the shared adapter boundary. Cache hits remain free; an exhausted live allowance falls through to a verified cache entry or deterministic fallback rather than spending another GPT-5.6 call.
+
+### Validation
+
+- `npm test`: 35 files / 219 tests passed.
+- `npx tsc --noEmit` and `npm run build` passed.
+- Focused local/persisted diagnostic-completion tests: 11 passed.
+- AI runtime tests: 28 passed.
+
+### Follow-up
+
+- Apply migration `022_mastered_diagnostic_completion.sql` before exercising this outcome against Supabase.
+- The current limiter is process-local. Use a shared store such as Redis before relying on it across multiple production instances.

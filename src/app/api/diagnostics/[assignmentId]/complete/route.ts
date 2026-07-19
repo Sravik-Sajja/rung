@@ -4,6 +4,7 @@ import { requireStudentActor } from "@/lib/auth/actor";
 import { applyGeneratedDemoPracticePlans, completeDemoDiagnostic, createGeneratedDemoPracticeSession, getOrCreateDemoDiagnosticPracticePlans } from "@/lib/student/demo-learning-store";
 import {
   finalizePersistedDiagnosticCompletion,
+  finalizePersistedAllMasteredDiagnostic,
   preparePersistedDiagnosticCompletion,
   type GeneratedPersistedPlan,
 } from "@/lib/student/learning-service";
@@ -66,6 +67,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ass
         };
       }
 
+      if (!persisted.targets.length) {
+        return NextResponse.json(await finalizePersistedAllMasteredDiagnostic({ preparation: persisted, narrative }));
+      }
+
       // GPT proposes only parameters. The persistence service invokes the
       // shared deterministic materializer before the atomic finalizer RPC.
       const plans = await Promise.all(persisted.targets.map(async (target): Promise<GeneratedPersistedPlan> => {
@@ -100,6 +105,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ass
     if (!demoCompletion) {
       return NextResponse.json({ error: "Complete every diagnostic item before continuing" }, { status: 400 });
     }
+    if (demoCompletion.allMastered) return NextResponse.json(demoCompletion);
     if (demoCompletion.practicePlans?.length) return NextResponse.json(demoCompletion);
 
     const supportedTags = demoCompletion.diagnosis.evidence.flatMap((entry) => entry.misconceptionTag ? [entry.misconceptionTag] : []);

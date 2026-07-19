@@ -9,8 +9,9 @@ import { canonicalDemoIds } from "@/lib/demo/contracts";
 
 type CompletedDiagnostic = {
   diagnosis: { selectedSubskillId: string; misconceptionTag: string; observation: string; explanation: string; nextStep: string; explanationSource: string };
-  practiceSession: { id: string; status: "active"; firstItemId: string | null; itemCount: number };
+  practiceSession: { id: string; status: "active" | "complete"; firstItemId: string | null; itemCount: number };
   practicePlans?: Array<{ id: string; targetSubskillId?: string; title: string; reason: string; itemCount: number; firstItemId?: string; status?: "active" | "complete" }>;
+  allMastered?: boolean;
 };
 
 function DiagnosisContent() {
@@ -68,6 +69,14 @@ function DiagnosisContent() {
           <div className="mx-auto w-full max-w-3xl">
             {!result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Building your focused practice…"}</p></Card>}
             {result && (() => {
+              if (result.allMastered) {
+                return <Card className="animate-rise border-mastery-mastered bg-elevated p-7 sm:p-8">
+                  <Eyebrow className="mb-3">All skills mastered</Eyebrow>
+                  <h2 className="text-2xl font-bold tracking-tight text-ink">You&rsquo;re ready for your next climb.</h2>
+                  <p className="mt-3 max-w-xl text-ink-muted">Your check-in shows that you have already mastered the skills in this set. There is no focused practice to complete right now.</p>
+                  <div className="mt-6"><Link href={`/student/mastery?studentId=${encodeURIComponent(studentId!)}`} className={buttonClasses("focus", "md")}>View your skill climb</Link></div>
+                </Card>;
+              }
               const practicePlans = result.practicePlans?.length
                 ? result.practicePlans
                 : [{ id: result.practiceSession.id, title: "Focused practice", reason: result.diagnosis.nextStep, itemCount: result.practiceSession.itemCount }];
