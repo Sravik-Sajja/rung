@@ -48,9 +48,23 @@ describe("temporary demo participants", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is always disabled in production, even if DEMO_MODE is misconfigured", () => {
+  it("stays disabled in production on DEMO_MODE alone — fails closed without the explicit opt-in", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEMO_MODE", "true");
+    expect(isDemoMode()).toBe(false);
+  });
+
+  it("enables a production demo only when ALLOW_DEMO_IN_PROD is also set alongside DEMO_MODE", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "true");
+    vi.stubEnv("ALLOW_DEMO_IN_PROD", "true");
+    expect(isDemoMode()).toBe(true);
+  });
+
+  it("keeps the production demo closed when only ALLOW_DEMO_IN_PROD is set", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("ALLOW_DEMO_IN_PROD", "true");
     expect(isDemoMode()).toBe(false);
   });
 

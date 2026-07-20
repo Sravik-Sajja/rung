@@ -85,10 +85,14 @@ function configuredClient() {
 }
 
 export function isDemoMode(): boolean {
-  // DEMO_MODE is intentionally never an escape hatch in a production deploy.
-  // A misconfigured environment must fail closed rather than expose anonymous
-  // temporary-learner creation alongside real student data.
-  if (process.env.NODE_ENV === "production") return false;
+  // DEMO_MODE alone is never an escape hatch in a production deploy: a misconfigured
+  // environment must fail closed rather than expose anonymous temporary-learner creation
+  // alongside real student data. A hosted demo (e.g. a Vercel walkthrough) must opt in
+  // *explicitly* with a second, dedicated flag on top of DEMO_MODE — so a single stray env
+  // var can never flip a real deployment open, and turning it off is a one-variable action.
+  if (process.env.NODE_ENV === "production") {
+    return process.env.DEMO_MODE === "true" && process.env.ALLOW_DEMO_IN_PROD === "true";
+  }
   return process.env.DEMO_MODE === "true"
     || (process.env.NODE_ENV === "development" && process.env.DEMO_MODE !== "false");
 }
