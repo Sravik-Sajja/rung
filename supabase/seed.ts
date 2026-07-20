@@ -178,26 +178,52 @@ async function seed() {
     id: `${plan.id}-plan`, teacher_group_id: plan.id, prompt_version: "seed-v1", status: "cached",
     content: { objective: plan.objective, durationMinutes: plan.durationMinutes, materials: plan.materials, practiceItemIds: plan.practiceItemIds, checkForUnderstanding: "Students explain their strategy before sharing an answer." },
   }))));
-  // The teacher card renders title, provider, and note only — never the URL as
-  // a link — so a group without a final reviewed link shows a topical note, not
-  // a dead anchor. The one reviewed Khan video teaches renaming to a common
-  // denominator then adding, so it fits both the common-denominator and
-  // add-unlike groups (which share the same video title). Remaining groups get
-  // an honest objective-derived note rather than a placeholder TODO.
-  const reviewedAddSubVideoTitle = "Adding fractions with unlike denominators";
+  // Mirrors the reviewed Khan Academy videos in src/lib/demo-data.ts so demo and durable
+  // modes recommend the same vetted content. embed_url uses youtube-nocookie (the Khan page
+  // itself refuses framing) and is what lets the student refresher panel play inline; the
+  // common-denominator and add-unlike groups deliberately share one video.
+  const reviewedVideos: Record<string, { title: string; url: string; youtubeId: string; note: string }> = {
+    [canonicalDemoSubskillIds[0]]: {
+      title: "Equivalent fractions with visual models",
+      url: "https://www.khanacademy.org/math/arithmetic-home/arith-review-fractions/visualizing-equiv-frac/v/equivalent-fractions",
+      youtubeId: "U2ovEuEUxXQ",
+      note: "Reviewed: it builds equivalent fractions with visual models and shows why scaling the numerator and denominator together preserves value; fits the equivalent-fractions group.",
+    },
+    [canonicalDemoSubskillIds[1]]: {
+      title: "Fractions on a number line",
+      url: "https://www.khanacademy.org/math/cc-third-grade-math/imp-fractions/imp-fractions-on-the-number-line/v/fractions-on-a-number-line",
+      youtubeId: "Z0WsfO-RI8Y",
+      note: "Reviewed: it partitions a number line into equal parts and places a fraction by counting those parts; fits the number-line group.",
+    },
+    [canonicalDemoSubskillIds[2]]: {
+      title: "Adding fractions with unlike denominators",
+      url: "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/adding-small-fractions-with-unlike-denominators",
+      youtubeId: "bcCLKACsYJ0",
+      note: "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the common-denominator and add-unlike groups.",
+    },
+    [canonicalDemoSubskillIds[3]]: {
+      title: "Adding fractions with unlike denominators",
+      url: "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/adding-small-fractions-with-unlike-denominators",
+      youtubeId: "bcCLKACsYJ0",
+      note: "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the common-denominator and add-unlike groups.",
+    },
+    [canonicalDemoSubskillIds[4]]: {
+      title: "Subtracting fractions with unlike denominators",
+      url: "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/subtracting-small-fractions-with-unlike-denominators",
+      youtubeId: "2DPivVFCdqA",
+      note: "Reviewed: it finds a common denominator, rewrites each fraction, then subtracts; the direct parallel to the adding video, fits the subtract group.",
+    },
+  };
   await assertNoError(await supabase.from("video_recommendations").upsert(groupPlans.map((plan) => {
-    const hasReviewedVideo = plan.videoTitle === reviewedAddSubVideoTitle;
+    const video = reviewedVideos[plan.subskillId];
     return {
       id: `${plan.subskillId}-video`,
       subskill_id: plan.subskillId,
-      title: plan.videoTitle,
-      provider: hasReviewedVideo ? "Khan Academy" : "Rung reviewed resource",
-      url: hasReviewedVideo
-        ? "https://www.khanacademy.org/math/cc-fifth-grade-math/imp-fractions-3/imp-adding-and-subtracting-fractions-with-unlike-denominators/v/adding-small-fractions-with-unlike-denominators"
-        : "#",
-      verification_note: hasReviewedVideo
-        ? "Reviewed: it explicitly teaches finding a common denominator, rewriting equivalent fractions, then adding; it fits the common-denominator and add-unlike groups."
-        : `Matches this group's objective: ${plan.objective}`,
+      title: video.title,
+      provider: "Khan Academy",
+      url: video.url,
+      embed_url: `https://www.youtube-nocookie.com/embed/${video.youtubeId}`,
+      verification_note: video.note,
       is_active: true,
     };
   })));

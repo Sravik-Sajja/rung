@@ -111,7 +111,7 @@ The workspace begins with an empty roster. It fills only with students who join 
 To persist temporary learner/workspace data across server restarts:
 
 1. Create a Supabase project and set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`.
-2. Apply every SQL migration in `supabase/migrations/` in filename order, currently `001` through `022`.
+2. Apply every SQL migration in `supabase/migrations/` in filename order, currently `001` through `023`.
 3. Run:
 
    ```bash
@@ -153,9 +153,9 @@ npx tsc --noEmit
 npm run build
 ```
 
-Verified on July 19, 2026:
+Verified on July 20, 2026:
 
-- `npm test`: 35 test files and 219 tests passed.
+- `npm test`: 36 test files and 222 tests passed.
 - `npx tsc --noEmit`: passed.
 - `npm run build`: passed.
 

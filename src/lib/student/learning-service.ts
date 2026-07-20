@@ -1025,6 +1025,31 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
   return { isCorrect, masteryLevel: next.level, fullSolutionUnlocked: isCorrect, practice };
 }
 
+/**
+ * The latest completed persisted diagnostic and its practice plans — powers the "back to my plan"
+ * nav link and My Work's plan titles (WS1c). Returns `null` only when Supabase is not configured,
+ * mirroring `getPersistedStudentMastery`; a student with no completed diagnostic yet gets a null
+ * `diagnosticSessionId` and an empty plan list rather than an error.
+ */
+export async function getPersistedCurrentDiagnostic(input: { studentId: string }): Promise<{ diagnosticSessionId: string | null; practicePlans: PracticePlanSummary[] } | null> {
+  const client = configuredClient();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("diagnostic_sessions")
+    .select("id")
+    .eq("student_id", input.studentId)
+    .eq("status", "complete")
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const diagnosticSessionId = (data as { id: string } | null)?.id ?? null;
+  if (!diagnosticSessionId) return { diagnosticSessionId: null, practicePlans: [] };
+  const completion = await readPersistedDiagnosticCompletion(client, { diagnosticSessionId });
+  if (!completion) return { diagnosticSessionId: null, practicePlans: [] };
+  return { diagnosticSessionId, practicePlans: completion.practicePlans };
+}
+
 export async function getPersistedStudentMastery(input: { studentId: string; topicId: string; classId: string }) {
   const client = configuredClient();
   if (!client) return null;

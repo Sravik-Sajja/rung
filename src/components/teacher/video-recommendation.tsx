@@ -3,7 +3,7 @@
 // group without a vetted link yet (url is the "#" sentinel or any non-URL) shows
 // an honest "Link pending" badge and no dead anchor. The regex check fails safe:
 // anything that is not an http(s) URL renders as pending.
-import { Badge, Card, Eyebrow } from "@/components/ui";
+import { Badge, Card, Eyebrow, VideoEmbed } from "@/components/ui";
 import type { VettedVideo } from "@/lib/types";
 
 const isReviewedLink = (url: string) => /^https?:\/\//.test(url);
@@ -19,19 +19,7 @@ export function VideoRecommendationCard({ video }: { video: VettedVideo }) {
         {watchable ? <Badge tone="accent">Reviewed</Badge> : <Badge tone="neutral">Link pending</Badge>}
       </div>
 
-      {watchable && video.embedUrl ? (
-        <div className="mt-3 aspect-video w-full overflow-hidden rounded-md border border-border bg-surface-2">
-          <iframe
-            className="h-full w-full"
-            src={video.embedUrl}
-            title={video.title}
-            loading="lazy"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      ) : null}
+      {watchable && video.embedUrl ? <VideoEmbed video={video} className="mt-3" /> : null}
 
       <h2 className="mt-3 text-lg font-semibold text-ink">{video.title}</h2>
       <p className="mt-1 text-sm text-ink-muted">{video.provider}</p>

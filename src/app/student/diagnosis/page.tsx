@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { StudentShell } from "@/components/student/surface/student-shell";
 import { Card, Eyebrow, buttonClasses } from "@/components/ui";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
+import { formatCompletedAt, groupItemsById, WorkItemReview } from "@/components/student/work-item-review";
+import type { StudentWorkSession } from "@/lib/student/work-history";
 
 type CompletedDiagnostic = {
   diagnosis: { selectedSubskillId: string; misconceptionTag: string; observation: string; explanation: string; nextStep: string; explanationSource: string };
@@ -13,6 +15,53 @@ type CompletedDiagnostic = {
   practicePlans?: Array<{ id: string; targetSubskillId?: string; title: string; reason: string; itemCount: number; firstItemId?: string; status?: "active" | "complete" }>;
   allMastered?: boolean;
 };
+
+/**
+ * "How you did, question by question" (WS4b) — the first and only place diagnostic item results
+ * are shown to a student. Renders below the plan cards (a review, not the headline) and only after
+ * the diagnosis has already been generated, which is exactly when this component mounts. Prefers
+ * matching `sessionId === diagnosticSessionId`; falls back to the single diagnostic session if for
+ * some reason ids don't line up (session id can be awkward to thread through in demo mode), so a
+ * student is never shown someone else's — or no — recap for a check-in they just completed.
+ */
+function DiagnosticReveal({ studentId, diagnosticSessionId }: { studentId: string; diagnosticSessionId: string | null }) {
+  const [sessions, setSessions] = useState<StudentWorkSession[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/students/${encodeURIComponent(studentId)}/work`)
+      .then(async (response) => (response.ok ? response.json() : Promise.reject(new Error((await response.json()).error))))
+      .then((data: { sessions: StudentWorkSession[] }) => setSessions(data.sessions))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load your check-in results"));
+  }, [studentId]);
+
+  if (!sessions) {
+    return <p className="mt-10 text-sm text-ink-muted">{error ?? "Loading your check-in results…"}</p>;
+  }
+
+  const diagnosticSessions = sessions.filter((session) => session.kind === "diagnostic");
+  const session = (diagnosticSessionId && diagnosticSessions.find((candidate) => candidate.sessionId === diagnosticSessionId)) ?? diagnosticSessions[0];
+  // Nothing to show yet (evidence lags a beat behind plan generation in some edge cases) — the
+  // plan cards above are the primary content either way, so this section just quietly omits itself.
+  if (!session) return null;
+
+  const groups = groupItemsById(session.items);
+
+  return (
+    <section className="mt-10 border-t border-border pt-8">
+      <Eyebrow className="mb-2">Review</Eyebrow>
+      <h2 className="text-xl font-bold tracking-tight text-ink">How you did, question by question</h2>
+      <p className="mt-2 text-sm text-ink-muted">
+        Your check-in from {formatCompletedAt(session.completedAt)} — {session.firstTryCount} of {session.totalCount} first try.
+      </p>
+      <ul className="mt-4 space-y-4">
+        {groups.map((group) => (
+          <WorkItemReview key={group.itemId} group={group} />
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function DiagnosisContent() {
   const params = useSearchParams();
@@ -55,7 +104,7 @@ function DiagnosisContent() {
   }, [result, studentId]);
 
   return (
-    <StudentShell size="wide">
+    <StudentShell size="wide" studentId={studentId ?? undefined}>
       <section className="flex flex-1 items-center">
         <div className="grid w-full gap-10 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-center lg:gap-12 xl:grid-cols-[20rem_minmax(0,1fr)] xl:gap-16 2xl:grid-cols-[24rem_minmax(0,1fr)] 2xl:gap-24">
           <aside className="animate-rise flex flex-col">
@@ -96,6 +145,7 @@ function DiagnosisContent() {
                 })}</div>
               </div>;
             })()}
+            {result && studentId && <DiagnosticReveal studentId={studentId} diagnosticSessionId={diagnosticSessionId} />}
           </div>
         </div>
       </section>

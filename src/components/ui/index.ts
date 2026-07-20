@@ -5,3 +5,4 @@ export { Card } from "./card";
 export { Badge, type BadgeTone } from "./badge";
 export { Eyebrow } from "./eyebrow";
 export { PageHeader } from "./page-header";
+export { VideoEmbed } from "./video-embed";

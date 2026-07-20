@@ -575,6 +575,82 @@ export function getDemoStudentResponseEvidence(studentId: string): LocalResponse
     .map((attempt) => ({ ...attempt, ...(attempt.visualSpec ? { visualSpec: { ...attempt.visualSpec } } : {}) }));
 }
 
+/** Session-shaped summary consumed only by `src/lib/student/work-history.ts`. */
+export type DemoWorkSessionSummary = {
+  kind: "diagnostic" | "practice";
+  sessionId: string;
+  /** Diagnostic: the diagnosis has been generated. Practice: every item resolved to "correct". */
+  complete: boolean;
+  /** Set only when every item in the session shares one subskill (always true once a practice
+   * session was built from a single generated plan; the base non-AI flow can mix in items from a
+   * hinted prerequisite, so it is left unset there). */
+  subskillId?: string;
+  planTitle?: string;
+  /** Item ids in session order. After completion this is one entry per item (see
+   * `recordDemoPracticeResponse`, which folds a retried occurrence back onto the original once it
+   * is answered correctly), so it is already the de-duplicated list `work-history.ts` needs. */
+  itemIds: string[];
+};
+
+/**
+ * Session identity and ordering for the student work-history read path (WS1a). Exposes only ids
+ * and completion state — never an answer or a score. `src/lib/student/work-history.ts` joins this
+ * against `getDemoStudentResponseEvidence` (by item id + context) to build the answer-safe DTO, and
+ * is the place that applies the "diagnostic hidden until complete" / "practice hidden until
+ * resolved" rules using the `complete` flag returned here.
+ */
+export function getDemoStudentWorkSessions(studentId: string): DemoWorkSessionSummary[] {
+  const diagnostics = getDemoSessions<DiagnosticRun>("diagnostic")
+    .filter((run) => run.studentId === studentId)
+    .map((run): DemoWorkSessionSummary => ({
+      kind: "diagnostic",
+      sessionId: run.id,
+      complete: Boolean(run.completion),
+      itemIds: run.items.map((item) => item.id),
+    }));
+  const practice = getDemoSessions<PracticeRun>("practice")
+    .filter((run) => run.studentId === studentId && run.items.length > 0)
+    .map((run): DemoWorkSessionSummary => {
+      const subskillIds = new Set(run.items.map((entry) => entry.item.subskillId));
+      const planTitles = new Set(run.items.flatMap((entry) => entry.plan?.title ? [entry.plan.title] : []));
+      return {
+        kind: "practice",
+        sessionId: run.id,
+        complete: run.items.every((entry) => entry.status === "correct"),
+        subskillId: subskillIds.size === 1 ? [...subskillIds][0] : undefined,
+        planTitle: planTitles.size === 1 ? [...planTitles][0] : undefined,
+        itemIds: run.items.map((entry) => entry.item.id),
+      };
+    });
+  return [...diagnostics, ...practice];
+}
+
+/**
+ * The latest completed local diagnostic and its practice plans — powers the "back to my plan" nav
+ * link and My Work's plan titles (WS1c). `diagnosticSessionId: null` means this student has never
+ * completed a diagnostic yet; that is a normal state. This function itself never returns `null` —
+ * demo mode has no "store unavailable" state, unlike the persisted counterpart, so the route can
+ * reserve a `null` result exclusively for that case.
+ */
+export function getDemoCurrentDiagnostic(studentId: string): { diagnosticSessionId: string | null; practicePlans: DemoPracticePlanSummary[] } {
+  const completed = getDemoSessions<DiagnosticRun>("diagnostic")
+    .filter((run) => run.studentId === studentId && run.completion)
+    .at(-1);
+  if (!completed?.completion) return { diagnosticSessionId: null, practicePlans: [] };
+  const practicePlans = completed.completion.practicePlans?.length
+    ? completed.completion.practicePlans
+    : [{
+        id: completed.completion.practiceSession.id,
+        targetSubskillId: completed.completion.diagnosis.selectedSubskillId,
+        title: "Focused practice",
+        reason: completed.completion.diagnosis.nextStep,
+        itemCount: completed.completion.practiceSession.itemCount,
+        firstItemId: completed.completion.practiceSession.firstItemId ?? undefined,
+        status: completed.completion.practiceSession.status,
+      }];
+  return { diagnosticSessionId: completed.id, practicePlans };
+}
+
 export function getDemoStudentMastery(studentId: string) {
   return demoSubskills.map((subskill) => {
     const updated = latestMastery.get(masteryKey(studentId, subskill.id));
