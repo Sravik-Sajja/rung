@@ -1,6 +1,7 @@
 // Root document shell: loads self-hosted fonts, global tokens, and shared metadata.
 import type { Metadata } from "next";
 import { Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const sans = Hanken_Grotesk({
@@ -48,7 +49,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       {/* Browser extensions (translation tools, etc.) inject attributes/classes onto <body>
           before React hydrates, causing a benign attribute mismatch. Suppress the warning on this
           one element — it only tolerates body-level extension noise, not real hydration bugs. */}
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

@@ -12,9 +12,12 @@
     "seed": "tsx supabase/seed.ts",
     "reset-demo": "npm run seed"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
+    "@vercel/analytics": "^2.0.1",
     "next": "^15.2.0",
     "openai": "^4.85.0",
     "react": "^19.0.0",
