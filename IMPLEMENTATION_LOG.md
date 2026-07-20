@@ -656,3 +656,16 @@ The per-learner question bank in `src/lib/items/diagnostic-items.ts` already exi
 
 - Apply migration `022_mastered_diagnostic_completion.sql` before exercising this outcome against Supabase.
 - The current limiter is process-local. Use a shared store such as Redis before relying on it across multiple production instances.
+
+## 2026-07-20 — practice completion recap
+
+### Completed
+
+- Added a learner-facing summary screen at the end of every completed practice plan. It reports correct answers, first-try successes, total attempts, retries, and a per-question retry recap without exposing answer keys.
+- Added a learner-safe practice-summary API for both local-demo and Supabase-backed sessions; counts come from stored response history rather than model-generated interpretation.
+- Made the practice `Check` button disable and display `Checking…` while an answer is being submitted, preventing duplicate submissions.
+
+### Validation
+
+- `npx tsc --noEmit` passed.
+- Focused demo learning-store tests: 6 passed.

@@ -49,6 +49,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
   const [activeHint, setActiveHint] = useState<HintLevel | undefined>();
   const [hintText, setHintText] = useState<string>();
   const [hintLoading, setHintLoading] = useState(false);
+  const [answerLoading, setAnswerLoading] = useState(false);
   const [lastAttempt, setLastAttempt] = useState("");
   // This is an escalation, not another first-attempt aid: the learner must
   // use a substantive hint and then miss the same item again.
@@ -74,21 +75,26 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
     const hadSubstantiveHint = activeHint === "hint" || activeHint === "guided_step";
     setError(null);
     setLastAttempt(answer);
-    const response = await fetch("/api/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId, context: "practice", practiceSessionId: practice.session.id, practiceSessionItemId: current.practiceSessionItemId, itemId: current.itemId, answer }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(body.error ?? "Could not record answer");
-      return;
-    }
-    setLastCorrect(Boolean(body.isCorrect));
-    if (body.isCorrect) setNextPractice(body.practice);
-    else {
-      setPractice(body.practice);
-      if (hadSubstantiveHint) setWorkHelpEligible(true);
+    setAnswerLoading(true);
+    try {
+      const response = await fetch("/api/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, context: "practice", practiceSessionId: practice.session.id, practiceSessionItemId: current.practiceSessionItemId, itemId: current.itemId, answer }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(body.error ?? "Could not record answer");
+        return;
+      }
+      setLastCorrect(Boolean(body.isCorrect));
+      if (body.isCorrect) setNextPractice(body.practice);
+      else {
+        setPractice(body.practice);
+        if (hadSubstantiveHint) setWorkHelpEligible(true);
+      }
+    } finally {
+      setAnswerLoading(false);
     }
   }
 
@@ -144,7 +150,7 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
   }
 
   const sessionWillComplete = nextPractice?.session.status === "complete";
-  const masteryHref = `/student/mastery?studentId=${encodeURIComponent(studentId)}`;
+  const summaryHref = `/student/practice/${sessionId}/summary?studentId=${encodeURIComponent(studentId)}${returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ""}`;
   // Rung count is derived from the items themselves (the same formula the GET route uses for its
   // `progress` field, which POST responses omit), not the item's own position, since resurfaced
   // items can revisit an earlier rung without moving the count backwards.
@@ -235,12 +241,12 @@ export function PersistedPracticeLoop({ sessionId, returnTo, studentId }: { sess
                 </div>
 
                 {!lastCorrect ? (
-                  <button type="submit" form={ANSWER_FORM_ID} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
-                    Check
+                  <button type="submit" form={ANSWER_FORM_ID} disabled={answerLoading} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+                    {answerLoading ? "Checking…" : "Check"}
                   </button>
                 ) : sessionWillComplete ? (
-                  <Link href={returnTo ?? masteryHref} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
-                    {returnTo ? "Back to practice plans" : "See my progress"}
+                  <Link href={summaryHref} className={buttonClasses("focus", "lg", "w-full sm:w-72")}>
+                    See practice summary
                   </Link>
                 ) : (
                   <button type="button" onClick={nextQuestion} className={buttonClasses("focus", "lg", "animate-pop w-full sm:w-72")}>

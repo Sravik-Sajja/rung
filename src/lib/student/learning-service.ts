@@ -832,6 +832,71 @@ export async function getPersistedPractice(input: { practiceSessionId: string; s
   };
 }
 
+/** Returns a learner-safe completion recap. It uses stored response history,
+ * not a model inference, and never returns accepted answers to the browser. */
+export async function getPersistedPracticeSummary(input: { practiceSessionId: string; studentId: string }) {
+  const client = configuredClient();
+  if (!client) return null;
+  const { data: session, error: sessionError } = await client
+    .from("practice_sessions")
+    .select("id, student_id, status")
+    .eq("id", input.practiceSessionId)
+    .maybeSingle();
+  if (sessionError || !session || session.student_id !== input.studentId) throw new Error("Practice session is unavailable.");
+
+  const { data: rows, error: itemsError } = await client
+    .from("practice_session_items")
+    .select("item_id, position, items(id, subskill_id, prompt)")
+    .eq("practice_session_id", input.practiceSessionId)
+    .order("position");
+  if (itemsError) throw new Error(itemsError.message);
+  const uniqueItems = new Map<string, { id: string; subskill_id: string; prompt: string }>();
+  for (const row of rows as unknown as Array<{ item_id: string; items: { id: string; subskill_id: string; prompt: string } | null }> ?? []) {
+    if (row.items) uniqueItems.set(row.item_id, row.items);
+  }
+
+  const { data: responses, error: responsesError } = await client
+    .from("student_responses")
+    .select("item_id, is_correct, submitted_at")
+    .eq("student_id", input.studentId)
+    .eq("practice_session_id", input.practiceSessionId)
+    .eq("context", "practice")
+    .order("submitted_at");
+  if (responsesError) throw new Error(responsesError.message);
+  const attemptsByItem = new Map<string, Array<{ is_correct: boolean }>>();
+  for (const response of responses as Array<{ item_id: string; is_correct: boolean }> ?? []) {
+    const attempts = attemptsByItem.get(response.item_id) ?? [];
+    attempts.push(response);
+    attemptsByItem.set(response.item_id, attempts);
+  }
+
+  const items = [...uniqueItems.values()].map((item) => {
+    const attempts = attemptsByItem.get(item.id) ?? [];
+    const incorrectAttemptCount = attempts.filter((attempt) => !attempt.is_correct).length;
+    return {
+      itemId: item.id,
+      prompt: item.prompt,
+      subskillId: item.subskill_id,
+      attemptCount: attempts.length,
+      incorrectAttemptCount,
+      correct: attempts.some((attempt) => attempt.is_correct),
+      correctOnFirstTry: attempts[0]?.is_correct ?? false,
+    };
+  });
+  const correctItemCount = items.filter((item) => item.correct).length;
+  return {
+    session: { id: session.id, status: session.status as "active" | "complete" },
+    totals: {
+      totalItemCount: items.length,
+      correctItemCount,
+      totalAttempts: items.reduce((total, item) => total + item.attemptCount, 0),
+      incorrectAttemptCount: items.reduce((total, item) => total + item.incorrectAttemptCount, 0),
+      correctOnFirstTryCount: items.filter((item) => item.correctOnFirstTry).length,
+    },
+    items,
+  };
+}
+
 export async function recordPersistedPracticeResponse(input: { practiceSessionId: string; practiceSessionItemId: string; studentId: string; answer: string }) {
   const client = configuredClient();
   if (!client) return null;

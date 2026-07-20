@@ -460,6 +460,29 @@ export type GetPracticeResponse = {
   progress: { completedItemCount: number; totalItemCount: number };
 };
 
+/** Learner-safe recap available for an owned practice session. It deliberately
+ * excludes submitted answers and answer keys; retry counts come from stored
+ * `student_responses` for this session. */
+export type GetPracticeSummaryResponse = {
+  session: { id: string; status: "active" | "complete" };
+  totals: {
+    totalItemCount: number;
+    correctItemCount: number;
+    totalAttempts: number;
+    incorrectAttemptCount: number;
+    correctOnFirstTryCount: number;
+  };
+  items: Array<{
+    itemId: string;
+    prompt: string;
+    subskillId: string;
+    attemptCount: number;
+    incorrectAttemptCount: number;
+    correct: boolean;
+    correctOnFirstTry: boolean;
+  }>;
+};
+
 export type TutorHintRequest = {
   studentId: string;
   /** Optional compatibility field; never used to resolve a session-owned item. */
@@ -592,6 +615,7 @@ Track A owns these handlers or equivalent server actions:
 | `GET /api/diagnostics/:assignmentId` | authenticated student | `GetDiagnosticResponse` |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student + `CompleteDiagnosticRequest` | `CompleteDiagnosticResponse` |
 | `GET /api/practice/:sessionId` | authenticated student | `GetPracticeResponse` |
+| `GET /api/practice/:sessionId/summary` | authenticated student; owned practice session | `GetPracticeSummaryResponse`; stored attempt/retry counts only, no answer keys |
 | `POST /api/tutor/hint` | authenticated student + `TutorHintRequest`; server resolves the owned exact occurrence | `TutorHintResponse` |
 | `POST /api/work-help` | authenticated student + multipart `WorkHelpRequest`; server records/claims the earned exact-occurrence support state | `WorkHelpResponse` |
 | `POST /api/peer-attempts` / `GET /api/peer-solutions/:itemId` | legacy only; must not be called by the current student UI | legacy peer contracts |

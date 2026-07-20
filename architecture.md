@@ -437,6 +437,7 @@ Exact routing may evolve, but server operations must have these contracts.
 | `POST /api/responses` | authenticated actor, `itemId`, `answer`, `context` | `isCorrect`, normalized answer, response ID |
 | `POST /api/diagnostics/:assignmentId/complete` | authenticated student | diagnosis, mastery snapshot, ordered selectable practice-plan cards |
 | `GET /api/practice/:sessionId` | authenticated student | ordered practice item cards, excluding answers |
+| `GET /api/practice/:sessionId/summary` | authenticated student, owned practice session | completion recap derived from stored responses: item-level attempts/retries and aggregate counts, never answer keys |
 | `POST /api/tutor/hint` | authenticated student, owned `practiceSessionId` + `practiceSessionItemId`, `attempt`, `level` | safe hint for that session occurrence, source (`ai`, `cache`, or `fallback`) |
 | `POST /api/work-help` | authenticated student, owned `practiceSessionId` + `practiceSessionItemId`, multipart typed work, optional JPEG/PNG/WebP photo (≤5 MiB), and support level | bounded observation, next step, check question, image-read signal, source metadata |
 | `GET /api/classes/:classId/dashboard` | authenticated teacher | heatmap cells, current computed groups, selected group summary |
@@ -463,6 +464,7 @@ The exact request/response DTOs, route ownership, canonical IDs, and Phase-0 fix
 - `/student/diagnostic` — one item at a time; progress indicator; no feedback that reveals later items.
 - `/student/diagnosis` — evidence-oriented plain language and a practice-plan hub: one selectable card per missed skill, with completed cards retained as completed when the learner returns from another plan.
 - `/student/practice/[sessionId]` — item, answer submission, hint ladder, conditional “Still stuck? Show your work” card, progress.
+- `/student/practice/[sessionId]/summary` — learner-safe recap after a plan is complete: correct count, first-try count, total attempts, and per-question retries from stored practice responses. It never reveals the answer key.
 - `/student/mastery` — narrow, plain-language skill status; sub-skills still below `mastered` are flagged “will come back” (the within-session resurfacing loop, §8); no misleading grade-level label.
 
 - `/join-class` — enter a join code, or land on `?joinCode=` from a shared link and confirm against a preview of the class before joining. A first-class entry point: a learner may arrive here before ever seeing `/demo`.

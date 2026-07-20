@@ -373,6 +373,54 @@ export function getDemoPractice(sessionId: string, studentId: string) {
   };
 }
 
+/** A learner-safe recap of one completed local practice run. Answers themselves
+ * are deliberately omitted: this screen reflects persistence and retries,
+ * rather than revealing solutions. */
+export function getDemoPracticeSummary(sessionId: string, studentId: string) {
+  const run = getDemoSession<PracticeRun>("practice", sessionId);
+  if (!run || run.studentId !== studentId) return null;
+
+  const itemsById = new Map<string, Item>();
+  for (const occurrence of run.items) itemsById.set(occurrence.item.id, occurrence.item);
+  const itemIds = new Set(itemsById.keys());
+  const attemptsByItem = new Map<string, LocalResponseEvidence[]>();
+  for (const attempt of localResponseEvidence.get(studentId) ?? []) {
+    if (attempt.context !== "practice" || !itemIds.has(attempt.itemId)) continue;
+    const attempts = attemptsByItem.get(attempt.itemId) ?? [];
+    attempts.push(attempt);
+    attemptsByItem.set(attempt.itemId, attempts);
+  }
+
+  const items = [...itemsById.values()].map((item) => {
+    const attempts = attemptsByItem.get(item.id) ?? [];
+    const incorrectAttemptCount = attempts.filter((attempt) => !attempt.isCorrect).length;
+    return {
+      itemId: item.id,
+      prompt: item.prompt,
+      subskillId: item.subskillId,
+      attemptCount: attempts.length,
+      incorrectAttemptCount,
+      correct: attempts.some((attempt) => attempt.isCorrect),
+      correctOnFirstTry: attempts[0]?.isCorrect ?? false,
+    };
+  });
+  const correctItemCount = items.filter((item) => item.correct).length;
+  const totalAttempts = items.reduce((total, item) => total + item.attemptCount, 0);
+  const incorrectAttemptCount = items.reduce((total, item) => total + item.incorrectAttemptCount, 0);
+
+  return {
+    session: { id: run.id, status: run.items.some((item) => item.status !== "correct") ? "active" as const : "complete" as const },
+    totals: {
+      totalItemCount: items.length,
+      correctItemCount,
+      totalAttempts,
+      incorrectAttemptCount,
+      correctOnFirstTryCount: items.filter((item) => item.correctOnFirstTry).length,
+    },
+    items,
+  };
+}
+
 /** Creates an empty local session that will be populated only by a validated generated plan. */
 export function createGeneratedDemoPracticeSession(studentId: string) {
   const id = createDemoSessionId("practice");
