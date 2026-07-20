@@ -20,9 +20,17 @@ describe("temporary teacher workspace", () => {
   });
   afterEach(() => { resetTeacherWorkspaceStore(); vi.unstubAllEnvs(); });
 
-  it("is disabled in production even with DEMO_MODE=true", () => {
+  it("is disabled in production with DEMO_MODE alone", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "true");
     expect(isTeacherWorkspaceDemoMode()).toBe(false);
+  });
+
+  it("enables the explicitly opted-in hosted demo in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEMO_MODE", "true");
+    vi.stubEnv("ALLOW_DEMO_IN_PROD", "true");
+    expect(isTeacherWorkspaceDemoMode()).toBe(true);
   });
 
   it("binds an isolated empty class to an opaque cookie without seeded demo IDs", async () => {

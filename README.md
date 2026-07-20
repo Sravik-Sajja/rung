@@ -40,7 +40,8 @@ The default local walkthrough works with only `DEMO_MODE=true`; it uses server-m
 
 | Variable | Required? | Purpose |
 | --- | --- | --- |
-| `DEMO_MODE=true` | Yes for the non-production demo | Enables temporary student and teacher-workspace flows. Teacher workspaces are disabled in production. |
+| `DEMO_MODE=true` | Yes for the demo | Enables temporary student and teacher-workspace flows. |
+| `ALLOW_DEMO_IN_PROD=true` | Yes for the public Vercel demo | Second explicit opt-in required alongside `DEMO_MODE=true` when `NODE_ENV=production`. Use only for this fictional hackathon demo, never real students. |
 | `OPENAI_API_KEY` | No | Enables live OpenAI requests. Without it, the app uses typed safe fallbacks. |
 | `OPENAI_MODEL` | No | Default model route. The example value is `gpt-5.6-luna`. |
 | `OPENAI_MODEL_DIAGNOSIS` | No | Optional diagnosis-model override. The example value is `gpt-5.6-terra`. |
@@ -180,7 +181,7 @@ GPT-5.6 provides structured diagnosis language, tutor hints, practice-plan param
 ## Known limitations
 
 - Rung currently demonstrates a middle-school fractions curriculum; the landing-page workflow is broader than the implemented content pack.
-- Teacher workspaces are non-production demo sessions, not production authentication or real classroom accounts.
+- Teacher workspaces are temporary fictional demo sessions, not production authentication or real classroom accounts.
 - The production browser sign-in/session UI and authenticated teacher authorization flow are not complete.
 - Without Supabase, temporary learner and teacher-workspace data resets when the local server restarts.
 - Without `OPENAI_API_KEY`, the app uses deterministic fallbacks instead of live model responses.

@@ -55,9 +55,15 @@ function configuredClient() {
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 
-/** Disabled in every production deployment, even if DEMO_MODE is mis-set. */
+/**
+ * A public hackathon deployment must opt in separately from DEMO_MODE. This
+ * remains a fictional, temporary workspace flow—not production classroom auth.
+ */
 export function isTeacherWorkspaceDemoMode() {
-  return process.env.NODE_ENV !== "production" && process.env.DEMO_MODE === "true";
+  if (process.env.NODE_ENV === "production") {
+    return process.env.DEMO_MODE === "true" && process.env.ALLOW_DEMO_IN_PROD === "true";
+  }
+  return process.env.DEMO_MODE === "true";
 }
 
 function tokenHash(token: string) { return createHash("sha256").update(token).digest("hex"); }
