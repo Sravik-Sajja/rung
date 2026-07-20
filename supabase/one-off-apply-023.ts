@@ -1,4 +1,4 @@
-// One-off: apply migration 022 (embed_url column) and refresh the five
+// One-off: apply migration 023 (embed_url column) and refresh the five
 // video_recommendations rows with the reviewed Khan videos, without running
 // the full destructive seed. Deleted after use.
 import { loadEnvConfig } from "@next/env";
