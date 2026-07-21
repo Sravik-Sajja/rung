@@ -31,7 +31,13 @@ type PracticeRun = {
   items: PracticeOccurrence[];
   mastery: Map<string, { level: MasteryLevel; evidenceCount: number }>;
   supportEvents?: PracticeSupportEvent[];
+  /** Set only by a teacher's "assign a follow-up" action, never by the base diagnostic-driven flow.
+   * Lets teacher-origin listings (`getDemoCurrentDiagnostic`, `getDemoAssignedFollowUps`) find these
+   * runs directly instead of trying to infer origin from the `plan` field generated practice also sets. */
+  origin?: "teacher";
 };
+
+export type DemoAssignedTeacherPractice = { planId: string; subskillId: string; studentId: string; alreadyAssigned: boolean };
 
 /** A presentation-safe description of where a local learner should resume. */
 export type DemoLearnerResume =
@@ -625,19 +631,107 @@ export function getDemoStudentWorkSessions(studentId: string): DemoWorkSessionSu
   return [...diagnostics, ...practice];
 }
 
+function isDemoPracticeRunComplete(run: PracticeRun) {
+  return run.items.length > 0 && run.items.every((item) => item.status === "correct");
+}
+
+/** The ACTIVE teacher-origin run already targeting this skill for this student, if one exists —
+ * demo-store counterpart to `findActiveTeacherPlan` in learning-service.ts. Every item in a teacher
+ * run shares one plan/subskill (see `assignDemoTeacherPractice`), so the first item's subskill
+ * stands in for the whole run's target. */
+function activeDemoTeacherPracticeRun(studentId: string, subskillId: string) {
+  return getDemoSessions<PracticeRun>("practice").find((run) => (
+    run.origin === "teacher"
+    && run.studentId === studentId
+    && run.items[0]?.item.subskillId === subskillId
+    && !isDemoPracticeRunComplete(run)
+  )) ?? null;
+}
+
+/**
+ * Demo-store counterpart to `assignTeacherPractice` (learning-service.ts): the same contract — a
+ * deterministic three-item plan, app-level idempotency against an ACTIVE teacher-origin run for the
+ * same (student, subskill) pair — built on the in-memory practice-run store instead of Supabase
+ * rows. `classId` is accepted only for parity with the persisted signature: every demo practice run
+ * already shares one fixed fractions topic, so there is nothing to look up from it.
+ */
+export function assignDemoTeacherPractice(input: { studentId: string; classId: string; subskillId: string; teacherName: string }): DemoAssignedTeacherPractice {
+  const existing = activeDemoTeacherPracticeRun(input.studentId, input.subskillId);
+  if (existing) return { planId: existing.id, subskillId: input.subskillId, studentId: input.studentId, alreadyAssigned: true };
+
+  const bankItems = demoItems
+    .filter((item) => item.subskillId === input.subskillId)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .slice(0, 3);
+  if (bankItems.length < 3) throw new Error("This skill does not have enough bank items to assign practice.");
+
+  const subskillName = demoSubskills.find((skill) => skill.id === input.subskillId)?.name ?? input.subskillId;
+  const plan: PracticePlan = { subskillId: input.subskillId, title: subskillName, reason: `Assigned by your teacher to strengthen ${subskillName}.` };
+  const run: PracticeRun = {
+    id: createDemoSessionId("practice"),
+    studentId: input.studentId,
+    topicId: canonicalDemoIds.fractionsTopicId,
+    items: bankItems.map((item, index) => ({ id: id("practice-item"), item, position: index + 1, status: "pending", plan })),
+    mastery: new Map(demoSubskills.map((skill) => [skill.id, currentStudentMastery(input.studentId, skill.id)])),
+    supportEvents: [],
+    origin: "teacher",
+  };
+  setDemoSession("practice", run.id, run);
+  return { planId: run.id, subskillId: input.subskillId, studentId: input.studentId, alreadyAssigned: false };
+}
+
+/** Backend data for the workspace dashboard payload (WS1a item 6): every teacher-origin plan among
+ * the given roster, reduced to the pair the dashboard needs to re-seed its assigned-follow-up state
+ * after a reload. */
+export function getDemoAssignedFollowUps(studentIds: readonly string[]): Array<{ studentId: string; subskillId: string }> {
+  const ids = new Set(studentIds);
+  return getDemoSessions<PracticeRun>("practice")
+    .filter((run) => run.origin === "teacher" && ids.has(run.studentId))
+    .flatMap((run) => {
+      const subskillId = run.items[0]?.item.subskillId;
+      return subskillId ? [{ studentId: run.studentId, subskillId }] : [];
+    });
+}
+
+/** Every teacher-origin run owned by this student, in the same summary shape `getDemoCurrentDiagnostic`
+ * needs — used only to fold into that function's output. */
+function demoTeacherPracticePlans(studentId: string): Array<DemoPracticePlanSummary & { source: "teacher" }> {
+  return getDemoSessions<PracticeRun>("practice")
+    .filter((run) => run.origin === "teacher" && run.studentId === studentId)
+    .map((run) => {
+      const plan = run.items[0]?.plan;
+      return {
+        id: run.id,
+        targetSubskillId: run.items[0]?.item.subskillId ?? "",
+        title: plan?.title ?? "Assigned practice",
+        reason: plan?.reason ?? "Assigned by your teacher.",
+        itemCount: run.items.length,
+        firstItemId: run.items[0]?.item.id,
+        status: isDemoPracticeRunComplete(run) ? "complete" as const : "active" as const,
+        source: "teacher" as const,
+      };
+    });
+}
+
 /**
  * The latest completed local diagnostic and its practice plans — powers the "back to my plan" nav
  * link and My Work's plan titles (WS1c). `diagnosticSessionId: null` means this student has never
  * completed a diagnostic yet; that is a normal state. This function itself never returns `null` —
  * demo mode has no "store unavailable" state, unlike the persisted counterpart, so the route can
  * reserve a `null` result exclusively for that case.
+ *
+ * Teacher-assigned plans (WS1a item 4) have no diagnostic session behind them, so they are read
+ * independently and folded in with `source: "teacher"` — including when this student has never
+ * completed a diagnostic at all, in which case `diagnosticSessionId` stays `null` but `practicePlans`
+ * still carries whatever a teacher has assigned.
  */
-export function getDemoCurrentDiagnostic(studentId: string): { diagnosticSessionId: string | null; practicePlans: DemoPracticePlanSummary[] } {
+export function getDemoCurrentDiagnostic(studentId: string): { diagnosticSessionId: string | null; practicePlans: Array<DemoPracticePlanSummary & { source: "diagnostic" | "teacher" }> } {
   const completed = getDemoSessions<DiagnosticRun>("diagnostic")
     .filter((run) => run.studentId === studentId && run.completion)
     .at(-1);
-  if (!completed?.completion) return { diagnosticSessionId: null, practicePlans: [] };
-  const practicePlans = completed.completion.practicePlans?.length
+  const teacherPlans = demoTeacherPracticePlans(studentId);
+  if (!completed?.completion) return { diagnosticSessionId: null, practicePlans: teacherPlans };
+  const basePlans = completed.completion.practicePlans?.length
     ? completed.completion.practicePlans
     : [{
         id: completed.completion.practiceSession.id,
@@ -648,7 +742,8 @@ export function getDemoCurrentDiagnostic(studentId: string): { diagnosticSession
         firstItemId: completed.completion.practiceSession.firstItemId ?? undefined,
         status: completed.completion.practiceSession.status,
       }];
-  return { diagnosticSessionId: completed.id, practicePlans };
+  const diagnosticPlans = basePlans.map((plan) => ({ ...plan, source: "diagnostic" as const }));
+  return { diagnosticSessionId: completed.id, practicePlans: [...diagnosticPlans, ...teacherPlans] };
 }
 
 export function getDemoStudentMastery(studentId: string) {

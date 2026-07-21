@@ -9,10 +9,15 @@ import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { formatCompletedAt, groupItemsById, WorkItemReview } from "@/components/student/work-item-review";
 import type { StudentWorkSession } from "@/lib/student/work-history";
 
+// Shared shape for both diagnostic-origin and teacher-origin plan cards (WS C). `source` is
+// optional because the completion POST's `practicePlans` predates the teacher-assignment feature
+// and never sends it — those are always diagnostic plans regardless.
+type PlanSummary = { id: string; targetSubskillId?: string; title: string; reason: string; itemCount: number; firstItemId?: string; status?: "active" | "complete"; source?: "diagnostic" | "teacher" };
+
 type CompletedDiagnostic = {
   diagnosis: { selectedSubskillId: string; misconceptionTag: string; observation: string; explanation: string; nextStep: string; explanationSource: string };
   practiceSession: { id: string; status: "active" | "complete"; firstItemId: string | null; itemCount: number };
-  practicePlans?: Array<{ id: string; targetSubskillId?: string; title: string; reason: string; itemCount: number; firstItemId?: string; status?: "active" | "complete" }>;
+  practicePlans?: PlanSummary[];
   allMastered?: boolean;
 };
 
@@ -63,6 +68,62 @@ function DiagnosticReveal({ studentId, diagnosticSessionId }: { studentId: strin
   );
 }
 
+/**
+ * Teacher-assigned practice (WS C), rendered above the diagnostic plan list. These plans have no
+ * diagnostic session behind them, so they get their own eyebrow rather than being folded into the
+ * diagnostic list — mixing them in would misattribute them and would shift the "Recommended from
+ * your diagnostic" badge (which is hard-coded to index 0) onto the wrong card. Card markup and the
+ * Start-practice/Completed affordances are identical to the diagnostic cards on purpose.
+ */
+function AssignedPlanCards({
+  plans,
+  completedPlanIds,
+  completedPlanId,
+  diagnosticSessionId,
+  studentId,
+  assignmentId,
+}: {
+  plans: PlanSummary[];
+  completedPlanIds: Set<string>;
+  completedPlanId: string | null;
+  diagnosticSessionId: string | null;
+  studentId: string;
+  assignmentId: string;
+}) {
+  if (!plans.length) return null;
+  return (
+    <div className="mb-6 space-y-3">
+      <Eyebrow>From your teacher</Eyebrow>
+      <div className="grid gap-3">
+        {plans.map((plan) => {
+          const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
+          // Same returnTo pattern as the diagnostic cards, including the possibly-empty
+          // diagnosticSessionId — the practice loop and its recap don't care which list a plan
+          // came from, only that returning here lands back on this hub.
+          const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId)}&assignmentId=${encodeURIComponent(assignmentId)}&completedPlan=${encodeURIComponent(plan.id)}`;
+          return (
+            <Card key={plan.id} className="flex items-center justify-between gap-4 p-5">
+              <div>
+                <p className="font-semibold capitalize text-ink">{plan.title}</p>
+              </div>
+              {isComplete ? (
+                <span className="text-sm font-semibold text-accent">Completed</span>
+              ) : (
+                <Link
+                  href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}&returnTo=${encodeURIComponent(returnTo)}`}
+                  className={buttonClasses("focus", "md")}
+                >
+                  Start practice
+                </Link>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DiagnosisContent() {
   const params = useSearchParams();
   const diagnosticSessionId = params.get("diagnosticSessionId");
@@ -73,16 +134,19 @@ function DiagnosisContent() {
   const [result, setResult] = useState<CompletedDiagnostic | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completedPlanIds, setCompletedPlanIds] = useState<Set<string>>(new Set());
+  // null = still loading, [] = loaded with nothing assigned. Kept separate from `result` because
+  // a student can reach this hub with teacher-assigned plans and NO diagnostic session at all.
+  const [teacherPlans, setTeacherPlans] = useState<PlanSummary[] | null>(null);
+  const hasDiagnostic = Boolean(diagnosticSessionId);
 
   useEffect(() => {
     if (!studentId) {
       router.replace("/demo");
       return;
     }
-    if (!diagnosticSessionId) {
-      setError("Complete the diagnostic before viewing your next step.");
-      return;
-    }
+    // Nothing to complete when there's no diagnostic session — this can be a teacher-only hub
+    // (see the current-diagnostic effect below), which is a normal state, not an error.
+    if (!diagnosticSessionId) return;
     fetch(`/api/diagnostics/${encodeURIComponent(assignmentId)}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,30 +158,85 @@ function DiagnosisContent() {
 
   useEffect(() => {
     if (!studentId) return;
-    if (!result?.practicePlans?.length) return;
-    Promise.all(result.practicePlans.map(async (plan) => {
+    // The completion POST response never includes teacher plans (WS A), so this hub always
+    // consults current-diagnostic separately to pick them up. When a diagnostic completion is in
+    // flight, wait for it to resolve first — firing immediately would race the store write that
+    // POST just triggered and could show a stale plan list. With no diagnostic session at all
+    // there's nothing to wait for, so fetch right away.
+    if (diagnosticSessionId && !result) return;
+    let cancelled = false;
+    fetch(`/api/students/${encodeURIComponent(studentId)}/current-diagnostic`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Could not load current diagnostic"))))
+      .then((data: { practicePlans: PlanSummary[] }) => {
+        if (cancelled) return;
+        const diagnosticIds = new Set((result?.practicePlans ?? []).map((plan) => plan.id));
+        setTeacherPlans(data.practicePlans.filter((plan) => plan.source === "teacher" && !diagnosticIds.has(plan.id)));
+      })
+      .catch(() => {
+        if (!cancelled) setTeacherPlans([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId, diagnosticSessionId, result]);
+
+  useEffect(() => {
+    if (!studentId) return;
+    const combined = [...(result?.practicePlans ?? []), ...(teacherPlans ?? [])];
+    if (!combined.length) return;
+    let cancelled = false;
+    Promise.all(combined.map(async (plan) => {
       const response = await fetch(`/api/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}`);
       if (!response.ok) return null;
       const practice = await response.json() as { session?: { status?: string } };
       return practice.session?.status === "complete" ? plan.id : null;
-    })).then((ids) => setCompletedPlanIds(new Set(ids.filter((id): id is string => Boolean(id)))));
-  }, [result, studentId]);
+    })).then((ids) => {
+      if (!cancelled) setCompletedPlanIds(new Set(ids.filter((id): id is string => Boolean(id))));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [result, teacherPlans, studentId]);
 
   return (
     <StudentShell size="wide" studentId={studentId ?? undefined}>
       <section className="flex flex-1 items-center">
         <div className="grid w-full gap-10 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-center lg:gap-12 xl:grid-cols-[20rem_minmax(0,1fr)] xl:gap-16 2xl:grid-cols-[24rem_minmax(0,1fr)] 2xl:gap-24">
           <aside className="animate-rise flex flex-col">
-            <Eyebrow className="mb-2">Check-in complete</Eyebrow>
+            <Eyebrow className="mb-2">{hasDiagnostic ? "Check-in complete" : "Practice assigned"}</Eyebrow>
             <h1 className="text-balance text-3xl font-extrabold tracking-tight text-ink sm:text-4xl 2xl:text-5xl">
               Here&rsquo;s your next climb.
             </h1>
-            <p className="mt-4 text-ink-muted 2xl:text-lg">Start with the skill your check-in flagged, then choose any other fraction skill you have not mastered yet.</p>
+            <p className="mt-4 text-ink-muted 2xl:text-lg">
+              {hasDiagnostic
+                ? "Start with the skill your check-in flagged, then choose any other fraction skill you have not mastered yet."
+                : "Your teacher assigned focused practice below."}
+            </p>
           </aside>
 
           <div className="mx-auto w-full max-w-3xl">
-            {!result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Building your focused practice…"}</p></Card>}
-            {result && (() => {
+            {/* Teacher-assigned plans sit above diagnostic content in every state (WS C) — a
+                teacher-only hub (no diagnostic session at all) renders nothing else below. */}
+            {teacherPlans && teacherPlans.length > 0 && (
+              <AssignedPlanCards
+                plans={teacherPlans}
+                completedPlanIds={completedPlanIds}
+                completedPlanId={completedPlanId}
+                diagnosticSessionId={diagnosticSessionId}
+                studentId={studentId!}
+                assignmentId={assignmentId}
+              />
+            )}
+
+            {!hasDiagnostic && teacherPlans === null && (
+              <Card className="p-5"><p className="text-ink-muted">Loading your plan…</p></Card>
+            )}
+            {!hasDiagnostic && teacherPlans !== null && teacherPlans.length === 0 && (
+              <Card className="p-5"><p className="text-ink-muted">{error ?? "Complete the diagnostic before viewing your next step."}</p></Card>
+            )}
+
+            {hasDiagnostic && !result && <Card className="p-5"><p className="text-ink-muted">{error ?? "Building your focused practice…"}</p></Card>}
+            {hasDiagnostic && result && (() => {
               if (result.allMastered) {
                 return <Card className="animate-rise border-mastery-mastered bg-elevated p-7 sm:p-8">
                   <Eyebrow className="mb-3">All skills mastered</Eyebrow>
@@ -145,7 +264,7 @@ function DiagnosisContent() {
                 })}</div>
               </div>;
             })()}
-            {result && studentId && <DiagnosticReveal studentId={studentId} diagnosticSessionId={diagnosticSessionId} />}
+            {hasDiagnostic && result && studentId && <DiagnosticReveal studentId={studentId} diagnosticSessionId={diagnosticSessionId} />}
           </div>
         </div>
       </section>

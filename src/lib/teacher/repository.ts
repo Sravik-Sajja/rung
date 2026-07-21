@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { getLocalDemoParticipants } from "@/lib/demo/participant";
-import { getDemoStudentMastery, getDemoStudentResponseEvidence } from "@/lib/student/demo-learning-store";
+import { getDemoAssignedFollowUps, getDemoStudentMastery, getDemoStudentResponseEvidence } from "@/lib/student/demo-learning-store";
 import { describeAcceptedAnswer } from "@/lib/math/scoring";
 import type { AnswerSpec, ItemVisualSpec, TeacherAttemptEvidence, TeacherStudentEvidence } from "@/lib/types";
 import { getDemoTeacherDashboard, getDemoTeacherGroup, getDemoTeacherGroupPlan, groupStudentsByNeed } from "@/lib/teacher/grouping";
@@ -238,6 +238,41 @@ export async function getTeacherDashboard(classId: string = canonicalDemoIds.cla
     // dashboard. It cannot introduce an answer from an unrelated student.
     responseEvidenceByStudent: await getTeacherEvidenceByStudentIds(dashboardStudents.map((student) => student.id), classId),
   };
+}
+
+/**
+ * Every teacher-origin practice plan among the given roster, reduced to the
+ * pair the workspace dashboard payload needs (WS1a item 6) to re-seed its
+ * assigned-follow-up state after a reload. `practice_plans` carries no
+ * student column of its own, so ownership is resolved through this roster's
+ * own `practice_sessions` first — the same pattern `assignTeacherPractice`
+ * and `getPersistedCurrentDiagnostic` use for the single-student case.
+ */
+export async function getTeacherAssignedFollowUps(studentIds: readonly string[]): Promise<Array<{ studentId: string; subskillId: string }>> {
+  const uniqueStudentIds = [...new Set(studentIds)];
+  if (!uniqueStudentIds.length) return [];
+  const client = configuredClient();
+  if (!client) return getDemoAssignedFollowUps(uniqueStudentIds);
+
+  const { data: sessionRows, error: sessionError } = await client
+    .from("practice_sessions")
+    .select("id, student_id")
+    .in("student_id", uniqueStudentIds);
+  if (sessionError) throw new Error(`Could not load assigned follow-ups: ${sessionError.message}`);
+  const sessions = (sessionRows ?? []) as Array<{ id: string; student_id: string }>;
+  if (!sessions.length) return [];
+  const studentBySessionId = new Map(sessions.map((session) => [session.id, session.student_id]));
+
+  const { data: planRows, error: planError } = await client
+    .from("practice_plans")
+    .select("id, target_subskill_id")
+    .eq("origin", "teacher")
+    .in("id", sessions.map((session) => session.id));
+  if (planError) throw new Error(`Could not load assigned follow-ups: ${planError.message}`);
+  return ((planRows ?? []) as Array<{ id: string; target_subskill_id: string }>).flatMap((plan) => {
+    const studentId = studentBySessionId.get(plan.id);
+    return studentId ? [{ studentId, subskillId: plan.target_subskill_id }] : [];
+  });
 }
 
 export async function getTeacherGroupPlan(groupId: string) {

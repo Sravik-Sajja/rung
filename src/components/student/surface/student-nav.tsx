@@ -5,6 +5,11 @@
 // completed a diagnostic yet has no plan hub to return to, so that link is disabled rather than
 // pointing somewhere broken. Active route is read via `usePathname` so this must stay a client
 // component.
+//
+// WS C: a student can also have teacher-assigned plans with NO diagnostic session at all
+// (`diagnosticSessionId: null` but `practicePlans` non-empty) — the link must still enable for
+// them, just without a diagnosticSessionId query param, since the hub renders an assigned-plans
+// section on its own in that state.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -20,18 +25,19 @@ type NavLink = {
 export function StudentNav({ studentId }: { studentId: string }) {
   const pathname = usePathname();
   // `undefined` = still loading (safe default: link stays disabled), `null` = confirmed this
-  // student has no completed diagnostic yet.
-  const [diagnosticSessionId, setDiagnosticSessionId] = useState<string | null | undefined>(undefined);
+  // student has neither a completed diagnostic nor any assigned plans.
+  const [planState, setPlanState] = useState<{ diagnosticSessionId: string | null; hasPlans: boolean } | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/students/${encodeURIComponent(studentId)}/current-diagnostic`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Could not load current diagnostic"))))
-      .then((data: { diagnosticSessionId: string | null }) => {
-        if (!cancelled) setDiagnosticSessionId(data.diagnosticSessionId);
+      .then((data: { diagnosticSessionId: string | null; practicePlans?: unknown[] }) => {
+        if (cancelled) return;
+        setPlanState({ diagnosticSessionId: data.diagnosticSessionId, hasPlans: Boolean(data.practicePlans?.length) });
       })
       .catch(() => {
-        if (!cancelled) setDiagnosticSessionId(null);
+        if (!cancelled) setPlanState(null);
       });
     return () => {
       cancelled = true;
@@ -39,8 +45,10 @@ export function StudentNav({ studentId }: { studentId: string }) {
   }, [studentId]);
 
   const studentQuery = `studentId=${encodeURIComponent(studentId)}`;
-  const planHref = diagnosticSessionId
-    ? `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId)}&${studentQuery}`
+  const planHref = planState && (planState.diagnosticSessionId || planState.hasPlans)
+    ? planState.diagnosticSessionId
+      ? `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(planState.diagnosticSessionId)}&${studentQuery}`
+      : `/student/diagnosis?${studentQuery}`
     : null;
 
   const links: NavLink[] = [

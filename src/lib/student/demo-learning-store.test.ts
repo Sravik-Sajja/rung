@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyGeneratedDemoPracticePlan, completeDemoDiagnostic, getDemoLearnerResume, getDemoPractice, getDemoStudentMastery, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
+import { applyGeneratedDemoPracticePlan, assignDemoTeacherPractice, completeDemoDiagnostic, getDemoAssignedFollowUps, getDemoCurrentDiagnostic, getDemoLearnerResume, getDemoPractice, getDemoStudentMastery, recordDemoDiagnosticResponse, recordDemoPracticeResponse, resetDemoLearningStore, startDemoDiagnostic } from "@/lib/student/demo-learning-store";
 import { canonicalDemoIds } from "@/lib/demo/contracts";
 import { buildDiagnosticItems } from "@/lib/items/diagnostic-items";
 import type { Item } from "@/lib/types";
@@ -123,5 +123,69 @@ describe("demo diagnostic to practice journey", () => {
     ] });
     expect(applied?.itemCount).toBe(3);
     expect(getDemoPractice(completed.practiceSession.id, canonicalDemoIds.mayaStudentId)?.items[0].prompt).toBe("What is a common denominator for 1/3 and 1/4?");
+  });
+});
+
+describe("teacher-assigned practice (WS1a)", () => {
+  beforeEach(resetDemoLearningStore);
+  afterEach(resetDemoLearningStore);
+
+  it("creates a real three-item practice session for a teacher's assign-follow-up action", () => {
+    const studentId = "demo-teacher-assign-create";
+    const result = assignDemoTeacherPractice({ studentId, classId: canonicalDemoIds.classId, subskillId: "equivalent-fractions", teacherName: "Ms. Rivera" });
+    expect(result).toMatchObject({ subskillId: "equivalent-fractions", studentId, alreadyAssigned: false });
+
+    const practice = getDemoPractice(result.planId, studentId);
+    expect(practice?.items.map((item) => item.itemId)).toEqual(["equivalent-1", "equivalent-2", "equivalent-3"]);
+    expect(practice?.session.status).toBe("active");
+  });
+
+  it("is idempotent: a second assignment for the same student and skill returns the same plan instead of duplicating it", () => {
+    const studentId = "demo-teacher-assign-idempotent";
+    const first = assignDemoTeacherPractice({ studentId, classId: canonicalDemoIds.classId, subskillId: "add-unlike-denominators", teacherName: "Ms. Rivera" });
+    const second = assignDemoTeacherPractice({ studentId, classId: canonicalDemoIds.classId, subskillId: "add-unlike-denominators", teacherName: "Ms. Rivera" });
+
+    expect(second).toEqual({ planId: first.planId, subskillId: "add-unlike-denominators", studentId, alreadyAssigned: true });
+    expect(getDemoAssignedFollowUps([studentId])).toEqual([{ studentId, subskillId: "add-unlike-denominators" }]);
+  });
+
+  it("surfaces an assigned plan in getDemoCurrentDiagnostic with source \"teacher\", alongside the student's diagnostic plans", () => {
+    const studentId = canonicalDemoIds.mayaStudentId;
+    const diagnostic = startDemoDiagnostic(studentId);
+    for (const item of buildDiagnosticItems(studentId)) {
+      recordDemoDiagnosticResponse({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId, itemId: item.id, answer: answerFor(item, "common-denominator-1") });
+    }
+    completeDemoDiagnostic({ diagnosticSessionId: diagnostic.diagnosticSessionId, studentId });
+    const assigned = assignDemoTeacherPractice({ studentId, classId: canonicalDemoIds.classId, subskillId: "subtract-unlike-denominators", teacherName: "Ms. Rivera" });
+
+    const current = getDemoCurrentDiagnostic(studentId);
+    expect(current.diagnosticSessionId).toBe(diagnostic.diagnosticSessionId);
+    expect(current.practicePlans).toContainEqual(expect.objectContaining({
+      id: assigned.planId,
+      targetSubskillId: "subtract-unlike-denominators",
+      source: "teacher",
+      status: "active",
+    }));
+    expect(current.practicePlans.some((plan) => plan.source === "diagnostic")).toBe(true);
+  });
+
+  it("still returns the assigned plan, with a null diagnosticSessionId, for a student who has never completed a diagnostic", () => {
+    const studentId = "demo-teacher-assign-only";
+    const assigned = assignDemoTeacherPractice({ studentId, classId: canonicalDemoIds.classId, subskillId: "equivalent-fractions", teacherName: "Ms. Rivera" });
+
+    const current = getDemoCurrentDiagnostic(studentId);
+    expect(current.diagnosticSessionId).toBeNull();
+    expect(current.practicePlans).toEqual([
+      expect.objectContaining({ id: assigned.planId, targetSubskillId: "equivalent-fractions", source: "teacher" }),
+    ]);
+  });
+
+  it("throws rather than assigning an incomplete set when a skill does not have three bank items", () => {
+    expect(() => assignDemoTeacherPractice({
+      studentId: "demo-teacher-assign-sparse",
+      classId: canonicalDemoIds.classId,
+      subskillId: canonicalDemoIds.commonDenominatorSubskillId,
+      teacherName: "Ms. Rivera",
+    })).toThrow();
   });
 });

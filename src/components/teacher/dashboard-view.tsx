@@ -12,33 +12,82 @@ export function DashboardView({
   dashboard,
   onRemoveStudent,
   removingStudentId,
+  onPersistFollowUp,
 }: {
   dashboard: TeacherDashboard;
   /** Only a temporary workspace passes these; the sample class roster is fixed. */
   onRemoveStudent?: (id: string) => void;
   removingStudentId?: string | null;
+  /**
+   * Only the workspace passes this. When present, `assignFollowUp` persists the
+   * follow-up through the assign-practice endpoint instead of only flipping the
+   * local notice; the fixed sample class leaves this undefined and keeps the
+   * pre-existing client-only simulation below.
+   */
+  onPersistFollowUp?: (studentId: string, subskillId: string) => Promise<{ alreadyAssigned: boolean }>;
 }) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [assignedFollowUps, setAssignedFollowUps] = useState<Set<string>>(() => new Set());
+  const [assignedFollowUps, setAssignedFollowUps] = useState<Set<string>>(
+    () => new Set((dashboard.assignedFollowUps ?? []).map((entry) => followUpKey(entry.studentId, entry.subskillId)))
+  );
   const [sentReminders, setSentReminders] = useState<Set<string>>(() => new Set());
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   function followUpKey(studentId: string, subskillId: string) {
     return `${studentId}:${subskillId}`;
   }
 
-  function assignFollowUp(studentId: string, subskillId: string) {
+  /**
+   * Optimistically marks a cell assigned, then (workspace only) persists it
+   * through `onPersistFollowUp`, rolling the optimistic mark back on failure.
+   * Returns a result instead of setting the notice itself so the group-level
+   * bulk path below can assign several students and report one combined notice.
+   */
+  async function persistFollowUp(studentId: string, subskillId: string): Promise<{ ok: true; alreadyAssigned: boolean } | { ok: false; error: string }> {
+    const key = followUpKey(studentId, subskillId);
+    setAssignedFollowUps((current) => new Set(current).add(key));
+
+    if (!onPersistFollowUp) {
+      // Fixed sample class: the roster is fictional, so there is nothing to persist —
+      // this stays a local-only simulation of what assigning would look like.
+      return { ok: true, alreadyAssigned: false };
+    }
+
+    try {
+      const result = await onPersistFollowUp(studentId, subskillId);
+      return { ok: true, alreadyAssigned: result.alreadyAssigned };
+    } catch (reason) {
+      setAssignedFollowUps((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+      return { ok: false, error: reason instanceof Error ? reason.message : "Could not assign that follow-up." };
+    }
+  }
+
+  async function assignFollowUp(studentId: string, subskillId: string) {
     const student = dashboard.students.find((candidate) => candidate.id === studentId);
     const subskill = dashboard.subskills.find((candidate) => candidate.id === subskillId);
-    setAssignedFollowUps((current) => new Set(current).add(followUpKey(studentId, subskillId)));
-    setActionNotice(`Assigned a 3-question follow-up to ${student?.displayName ?? "student"} for ${subskill?.name ?? "this skill"}.`);
+    const outcome = await persistFollowUp(studentId, subskillId);
+
+    if (!outcome.ok) {
+      setActionNotice({ tone: "error", message: outcome.error });
+      return;
+    }
+    if (outcome.alreadyAssigned) {
+      const firstName = student?.displayName.split(" ")[0] ?? "the student";
+      setActionNotice({ tone: "success", message: `Already assigned — waiting for ${firstName} to finish it.` });
+      return;
+    }
+    setActionNotice({ tone: "success", message: `Assigned a 3-question follow-up to ${student?.displayName ?? "student"} for ${subskill?.name ?? "this skill"}.` });
   }
 
   function sendReminder(studentId: string, subskillId: string) {
     const student = dashboard.students.find((candidate) => candidate.id === studentId);
     const subskill = dashboard.subskills.find((candidate) => candidate.id === subskillId);
     setSentReminders((current) => new Set(current).add(followUpKey(studentId, subskillId)));
-    setActionNotice(`Sent ${student?.displayName ?? "the student"} a reminder to begin ${subskill?.name ?? "this skill"}.`);
+    setActionNotice({ tone: "success", message: `Sent ${student?.displayName ?? "the student"} a reminder to begin ${subskill?.name ?? "this skill"}.` });
   }
 
   function groupForCell(studentId: string, subskillId: string) {
@@ -126,8 +175,16 @@ export function DashboardView({
                 />
               </Card>
               {actionNotice ? (
-                <p aria-live="polite" className="rounded-md border border-focus bg-focus-soft px-3 py-2 text-sm text-ink">
-                  {actionNotice}
+                <p
+                  aria-live="polite"
+                  className={
+                    actionNotice.tone === "error"
+                      ? "rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger"
+                      : "rounded-md border border-focus bg-focus-soft px-3 py-2 text-sm text-ink"
+                  }
+                  role={actionNotice.tone === "error" ? "alert" : undefined}
+                >
+                  {actionNotice.message}
                 </p>
               ) : null}
             </section>
@@ -154,9 +211,23 @@ export function DashboardView({
                       followUpAssigned={group.studentIds.every((studentId) => assignedFollowUps.has(followUpKey(studentId, group.subskillId)))}
                       group={group}
                       key={group.id}
-                      onAssignFollowUp={() => {
-                        group.studentIds.forEach((studentId) => assignFollowUp(studentId, group.subskillId));
-                        setActionNotice(`Assigned a 3-question follow-up to ${group.studentIds.length} students in ${group.label}.`);
+                      onAssignFollowUp={async () => {
+                        const outcomes = await Promise.all(
+                          group.studentIds.map((studentId) => persistFollowUp(studentId, group.subskillId))
+                        );
+                        const firstFailure = outcomes.find((outcome) => !outcome.ok);
+                        if (firstFailure && !firstFailure.ok) {
+                          const failedCount = outcomes.filter((outcome) => !outcome.ok).length;
+                          setActionNotice({
+                            tone: "error",
+                            message: `${firstFailure.error} (${failedCount} of ${group.studentIds.length} in ${group.label} could not be assigned.)`
+                          });
+                          return;
+                        }
+                        setActionNotice({
+                          tone: "success",
+                          message: `Assigned a 3-question follow-up to ${group.studentIds.length} students in ${group.label}.`
+                        });
                       }}
                       subskill={dashboard.subskills.find((subskill) => subskill.id === group.subskillId)}
                     />

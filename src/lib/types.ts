@@ -50,7 +50,7 @@ export interface Subskill { id: string; name: string; }
 export interface MasteryRecord { studentId: string; subskillId: string; level: MasteryLevel; evidenceSummary: string; }
 export interface HeatmapCell extends MasteryRecord {}
 export interface TeacherGroup { id: string; subskillId: string; label: string; studentIds: string[]; }
-export interface TeacherDashboard { classId: string; students: DemoStudent[]; subskills: Subskill[]; cells: HeatmapCell[]; groups: TeacherGroup[]; responseEvidenceByStudent?: Record<string, TeacherStudentEvidence["attemptsBySubskill"]>; }
+export interface TeacherDashboard { classId: string; students: DemoStudent[]; subskills: Subskill[]; cells: HeatmapCell[]; groups: TeacherGroup[]; responseEvidenceByStudent?: Record<string, TeacherStudentEvidence["attemptsBySubskill"]>; /** Every existing teacher-origin practice plan among this dashboard's own students, so a reload reflects what was already assigned instead of resetting to nothing. Undefined for the fixed sample class, whose fictional roster has no real assignment persistence. */ assignedFollowUps?: Array<{ studentId: string; subskillId: string }>; }
 export interface LessonStep { minutes: number; activity: string; }
 export interface VettedVideo { title: string; provider: string; url: string; verificationNote: string; embedUrl?: string; }
 export interface TeacherGroupPlan { groupId: string; objective: string; durationMinutes: number; materials: string[]; steps: LessonStep[]; checkForUnderstanding: string; practiceItemIds: string[]; video: VettedVideo; }

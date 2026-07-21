@@ -10,9 +10,14 @@ import type { TeacherWorkspace } from "@/lib/teacher-workspace/session";
 export function TeacherWorkspaceDashboard({
   workspace,
   responseEvidenceByStudent,
+  assignedFollowUps,
 }: {
   workspace: TeacherWorkspace;
   responseEvidenceByStudent?: TeacherDashboard["responseEvidenceByStudent"];
+  /** Existing teacher-origin plans for this roster (WS1a item 6), threaded straight onto the
+   * `dashboard` object below purely as data. DashboardView reads it to seed its assigned-follow-up
+   * Set; this component only supplies the fetch that persists new assignments (`persistFollowUp`). */
+  assignedFollowUps?: TeacherDashboard["assignedFollowUps"];
 }) {
   const [ending, setEnding] = useState(false);
   const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
@@ -32,6 +37,19 @@ export function TeacherWorkspaceDashboard({
     setEnding(true);
     await fetch("/api/teacher-workspace/session", { method: "DELETE" });
     window.location.reload();
+  }
+
+  async function persistFollowUp(studentId: string, subskillId: string) {
+    const response = await fetch(`/api/teacher-workspace/students/${encodeURIComponent(studentId)}/assign-practice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subskillId }),
+    });
+    const body = await response.json().catch(() => ({})) as { alreadyAssigned?: boolean; error?: string };
+    if (!response.ok) {
+      throw new Error(body.error ?? "Could not assign that follow-up.");
+    }
+    return { alreadyAssigned: Boolean(body.alreadyAssigned) };
   }
 
   async function removeStudent(studentId: string) {
@@ -89,7 +107,8 @@ export function TeacherWorkspaceDashboard({
     // Without this the student detail pane reports "no submitted responses"
     // for a learner whose mastery came from those very responses.
     responseEvidenceByStudent,
-  }), [responseEvidenceByStudent, workspace]);
+    assignedFollowUps,
+  }), [responseEvidenceByStudent, assignedFollowUps, workspace]);
 
   return (
     <div className="space-y-7">
@@ -149,7 +168,12 @@ export function TeacherWorkspaceDashboard({
       ) : (
         <>
           {removeError ? <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{removeError}</p> : null}
-          <DashboardView dashboard={dashboard} onRemoveStudent={removeStudent} removingStudentId={removingStudentId} />
+          <DashboardView
+            dashboard={dashboard}
+            onPersistFollowUp={persistFollowUp}
+            onRemoveStudent={removeStudent}
+            removingStudentId={removingStudentId}
+          />
         </>
       )}
       <p className="text-sm text-ink-faint">The cookie only resumes this non-production demo workspace. It is not a Supabase Auth session and must not be used for real classroom data.</p>

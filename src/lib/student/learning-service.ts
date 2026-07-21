@@ -1031,9 +1031,13 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
  * mirroring `getPersistedStudentMastery`; a student with no completed diagnostic yet gets a null
  * `diagnosticSessionId` and an empty plan list rather than an error.
  */
-export async function getPersistedCurrentDiagnostic(input: { studentId: string }): Promise<{ diagnosticSessionId: string | null; practicePlans: PracticePlanSummary[] } | null> {
+export async function getPersistedCurrentDiagnostic(input: { studentId: string }): Promise<{ diagnosticSessionId: string | null; practicePlans: Array<PracticePlanSummary & { source: "diagnostic" | "teacher" }> } | null> {
   const client = configuredClient();
   if (!client) return null;
+  // Teacher-assigned plans have no diagnostic session behind them, so they are
+  // read independently and folded in below rather than being reachable only
+  // through a diagnostic_session_id lookup.
+  const teacherPlans = await persistedTeacherPlans(client, input.studentId);
   const { data, error } = await client
     .from("diagnostic_sessions")
     .select("id")
@@ -1044,10 +1048,191 @@ export async function getPersistedCurrentDiagnostic(input: { studentId: string }
     .maybeSingle();
   if (error) throw new Error(error.message);
   const diagnosticSessionId = (data as { id: string } | null)?.id ?? null;
-  if (!diagnosticSessionId) return { diagnosticSessionId: null, practicePlans: [] };
+  if (!diagnosticSessionId) return { diagnosticSessionId: null, practicePlans: teacherPlans };
   const completion = await readPersistedDiagnosticCompletion(client, { diagnosticSessionId });
-  if (!completion) return { diagnosticSessionId: null, practicePlans: [] };
-  return { diagnosticSessionId, practicePlans: completion.practicePlans };
+  if (!completion) return { diagnosticSessionId: null, practicePlans: teacherPlans };
+  const diagnosticPlans = completion.practicePlans.map((plan) => ({ ...plan, source: "diagnostic" as const }));
+  return { diagnosticSessionId, practicePlans: [...diagnosticPlans, ...teacherPlans] };
+}
+
+export type AssignedTeacherPractice = { planId: string; subskillId: string; studentId: string; alreadyAssigned: boolean };
+
+/** The class's diagnostic assignment names the topic a teacher-assigned plan belongs to — there is
+ * no other source for a practice_sessions.topic_id when no diagnostic produced the plan. */
+async function topicForClass(client: ConfiguredClient, classId: string) {
+  return withCurriculumCache(`class-topic:${classId}`, async () => {
+    const { data, error } = await client.from("assignments").select("topic_id").eq("class_id", classId).limit(1).maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as { topic_id?: string } | null)?.topic_id ?? null;
+  });
+}
+
+/** The first three active bank items for a skill, in stable id order — deterministic on purpose:
+ * no AI is involved in a teacher's direct assignment. */
+async function teacherAssignableBankItemIds(client: ConfiguredClient, subskillId: string) {
+  const { data, error } = await client.from("items").select("id").eq("subskill_id", subskillId).eq("is_active", true).order("id").limit(3);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+}
+
+async function subskillDisplayName(client: ConfiguredClient, subskillId: string) {
+  return withCurriculumCache(`subskill-name:${subskillId}`, async () => {
+    const { data, error } = await client.from("subskills").select("name").eq("id", subskillId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const name = (data as { name?: string } | null)?.name;
+    if (!name) throw new Error("That skill was not found.");
+    return name;
+  });
+}
+
+/**
+ * An ACTIVE teacher-origin plan already targeting this skill for this student, if one exists. This
+ * is the app-level idempotency check migration 024's comment calls for: a teacher plan's nullable
+ * `diagnostic_session_id` means the diagnostic-era unique indexes never fire for it. Scoped through
+ * the student's own active sessions first (rather than scanning every teacher plan) because
+ * `practice_plans` carries no student column of its own — ownership only exists via
+ * `practice_sessions.id = practice_plans.id`.
+ */
+async function findActiveTeacherPlan(client: ConfiguredClient, studentId: string, subskillId: string) {
+  const { data: sessionRows, error: sessionError } = await client
+    .from("practice_sessions")
+    .select("id")
+    .eq("student_id", studentId)
+    .eq("status", "active");
+  if (sessionError) throw new Error(sessionError.message);
+  const sessionIds = ((sessionRows ?? []) as Array<{ id: string }>).map((row) => row.id);
+  if (!sessionIds.length) return null;
+  const { data: planRows, error: planError } = await client
+    .from("practice_plans")
+    .select("id")
+    .eq("origin", "teacher")
+    .eq("target_subskill_id", subskillId)
+    .in("id", sessionIds)
+    .limit(1);
+  if (planError) throw new Error(planError.message);
+  return ((planRows ?? []) as Array<{ id: string }>)[0]?.id ?? null;
+}
+
+/**
+ * Creates a real, student-owned practice plan for a teacher's "assign a
+ * follow-up" action — the fix for the stub that only flipped a client-side
+ * notice (`assignFollowUp` in dashboard-view.tsx). This reuses the exact rows
+ * a diagnostic completion writes — `practice_sessions`, `practice_session_items`,
+ * `practice_plans` — just with no diagnostic behind it: `origin = 'teacher'`
+ * and a null `diagnostic_session_id` (migration 024) are what let a reader
+ * tell the two apart.
+ */
+export async function assignTeacherPractice(input: { studentId: string; classId: string; subskillId: string; teacherName: string }): Promise<AssignedTeacherPractice | null> {
+  const client = configuredClient();
+  if (!client) return null;
+
+  const existingPlanId = await findActiveTeacherPlan(client, input.studentId, input.subskillId);
+  if (existingPlanId) return { planId: existingPlanId, subskillId: input.subskillId, studentId: input.studentId, alreadyAssigned: true };
+
+  const [topicId, itemIds, subskillName] = await Promise.all([
+    topicForClass(client, input.classId),
+    teacherAssignableBankItemIds(client, input.subskillId),
+    subskillDisplayName(client, input.subskillId),
+  ]);
+  if (!topicId) throw new Error("This class has no assignment to attach practice to.");
+  if (itemIds.length < 3) throw new Error("This skill does not have enough bank items to assign practice.");
+
+  const planId = defaultGeneratedId("teacher-practice");
+  const { error: sessionError } = await client.from("practice_sessions").insert({
+    id: planId,
+    student_id: input.studentId,
+    topic_id: topicId,
+    status: "active",
+    // Kept only for the same debugging trail every other session's
+    // diagnosis_snapshot carries; nothing downstream reads these fields back.
+    diagnosis_snapshot: { origin: "teacher", targetSubskillId: input.subskillId, assignedBy: input.teacherName },
+  });
+  if (sessionError) throw new Error(`Could not create the assigned practice session: ${sessionError.message}`);
+
+  const { error: itemsError } = await client.from("practice_session_items").insert(
+    itemIds.map((itemId, index) => ({ practice_session_id: planId, item_id: itemId, position: index + 1, status: "pending" })),
+  );
+  if (itemsError) throw new Error(`Could not create the assigned practice items: ${itemsError.message}`);
+
+  const { error: planError } = await client.from("practice_plans").insert({
+    id: planId,
+    diagnostic_session_id: null,
+    position: 1,
+    target_subskill_id: input.subskillId,
+    // `misconception_tag` stays NOT NULL by design (migration 024's comment);
+    // a teacher assignment carries no diagnosed misconception, so this fixed
+    // tag is the documented substitute rather than a schema change.
+    misconception_tag: "teacher_assigned",
+    title: subskillName,
+    reason: `Assigned by your teacher to strengthen ${subskillName}.`,
+    generation_source: "teacher",
+    generation_prompt_version: "teacher-assign-v1",
+    validator_version: "teacher-assign-v1",
+    origin: "teacher",
+  });
+  if (planError) throw new Error(`Could not create the assigned practice plan: ${planError.message}`);
+
+  return { planId, subskillId: input.subskillId, studentId: input.studentId, alreadyAssigned: false };
+}
+
+/**
+ * Every teacher-origin plan owned by this student, in the same summary shape
+ * `readPersistedDiagnosticCompletion` returns — used only to fold into
+ * `getPersistedCurrentDiagnostic`'s output. Bounded by the student's own
+ * sessions first for the same ownership reason `findActiveTeacherPlan` is.
+ */
+async function persistedTeacherPlans(client: ConfiguredClient, studentId: string): Promise<Array<PracticePlanSummary & { source: "teacher" }>> {
+  const { data: sessionRows, error: sessionError } = await client
+    .from("practice_sessions")
+    .select("id, status")
+    .eq("student_id", studentId);
+  if (sessionError) throw new Error(sessionError.message);
+  const sessions = (sessionRows ?? []) as Array<{ id: string; status: string }>;
+  if (!sessions.length) return [];
+  const sessionIds = sessions.map((session) => session.id);
+  const statusById = new Map(sessions.map((session) => [session.id, session.status]));
+
+  const { data: planRows, error: planError } = await client
+    .from("practice_plans")
+    .select("id, target_subskill_id, title, reason, created_at")
+    .eq("origin", "teacher")
+    .in("id", sessionIds)
+    .order("created_at", { ascending: false });
+  if (planError) throw new Error(planError.message);
+  const plans = (planRows ?? []) as Array<{ id: string; target_subskill_id: string; title: string; reason: string }>;
+  if (!plans.length) return [];
+  const planIds = plans.map((plan) => plan.id);
+
+  const { data: itemData, error: itemError } = await client
+    .from("practice_session_items")
+    .select("practice_session_id, item_id, position")
+    .in("practice_session_id", planIds)
+    .order("position");
+  if (itemError) throw new Error(itemError.message);
+  const counts = new Map<string, number>();
+  const firstItemByPlan = new Map<string, { itemId: string; position: number }>();
+  for (const row of (itemData ?? []) as PersistedPlanItemRow[]) {
+    counts.set(row.practice_session_id, (counts.get(row.practice_session_id) ?? 0) + 1);
+    const current = firstItemByPlan.get(row.practice_session_id);
+    if (!current || row.position < current.position) {
+      firstItemByPlan.set(row.practice_session_id, { itemId: row.item_id, position: row.position });
+    }
+  }
+
+  return plans.flatMap((plan) => {
+    const first = firstItemByPlan.get(plan.id);
+    if (!first) return []; // Not yet materialized; nothing to show.
+    return [{
+      id: plan.id,
+      targetSubskillId: plan.target_subskill_id,
+      title: plan.title,
+      reason: plan.reason,
+      itemCount: counts.get(plan.id) ?? 0,
+      firstItemId: first.itemId,
+      status: statusById.get(plan.id) === "complete" ? "complete" as const : "active" as const,
+      source: "teacher" as const,
+    }];
+  });
 }
 
 export async function getPersistedStudentMastery(input: { studentId: string; topicId: string; classId: string }) {

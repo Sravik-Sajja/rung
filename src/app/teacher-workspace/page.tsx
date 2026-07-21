@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { TeacherWorkspaceDashboard } from "@/components/teacher-workspace/workspace-dashboard";
 import { TeacherWorkspaceSetupForm } from "@/components/teacher-workspace/setup-form";
 import { isTeacherWorkspaceDemoMode, resolveTeacherWorkspaceSession, TEACHER_WORKSPACE_COOKIE } from "@/lib/teacher-workspace/session";
-import { getTeacherEvidenceByStudentIds } from "@/lib/teacher/repository";
+import { getTeacherAssignedFollowUps, getTeacherEvidenceByStudentIds } from "@/lib/teacher/repository";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,14 @@ export default async function TeacherWorkspacePage() {
   if (result.kind !== "resolved") return <AppShell active="teacher" width="wide"><TeacherWorkspaceSetupForm /></AppShell>;
   // Scoped to this workspace's own roster, so it cannot surface an answer from
   // a learner in another class.
-  const responseEvidenceByStudent = await getTeacherEvidenceByStudentIds(result.workspace.students.map((student) => student.id), result.workspace.classId);
+  const studentIds = result.workspace.students.map((student) => student.id);
+  const [responseEvidenceByStudent, assignedFollowUps] = await Promise.all([
+    getTeacherEvidenceByStudentIds(studentIds, result.workspace.classId),
+    getTeacherAssignedFollowUps(studentIds),
+  ]);
   return (
     <AppShell active="teacher" width="wide">
-      <TeacherWorkspaceDashboard responseEvidenceByStudent={responseEvidenceByStudent} workspace={result.workspace} />
+      <TeacherWorkspaceDashboard assignedFollowUps={assignedFollowUps} responseEvidenceByStudent={responseEvidenceByStudent} workspace={result.workspace} />
     </AppShell>
   );
 }
