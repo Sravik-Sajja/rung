@@ -1,6 +1,6 @@
 # Rung
 
-Rung is a differentiated-instruction prototype for middle-school math. A learner takes a short check-in, receives a separate focused-practice plan for each skill that needs work, and gets answer-safe AI support. Teachers can view evidence in a heatmap, take a quick action, and open an AI-assisted small-group mini-lesson.
+Rung is a differentiated-instruction prototype for middle-school math. A learner takes a short check-in, receives a separate AI-assisted focused-practice plan for each skill that needs work, and gets answer-safe AI support. Teachers can view evidence in a heatmap, take a quick action, and open an AI-assisted small-group mini-lesson.
 
 Correctness, scoring, and mastery are deterministic server decisions. GPT-5.6 helps with bounded explanation, tutoring, practice planning, and lesson drafting; it never decides whether an answer is correct or whether a learner has mastered a skill.
 
@@ -12,15 +12,18 @@ Correctness, scoring, and mastery are deterministic server decisions. GPT-5.6 he
 2. Finish the check-in. Rung creates one selectable practice plan for each skill that was not mastered; completed plans remain marked when you return.
 3. In a plan, submit one wrong answer. Use the three tutor levels—nudge, hint, and guided step—and then submit again.
 4. Finish the plan and open the practice summary. It shows correct answers, first-try successes, total attempts, retries, and the questions that needed another try without revealing answer keys.
+5. Use **Plan**, **My Work**, and **Progress** in the student header. Plan returns to the current class’s assigned practice sets; My Work shows completed evidence; Progress shows the current skill climb.
 
 Example learner name: `Alex`.
 
 ### Teacher flow
 
 1. Visit `/teacher-workspace` and create a workspace with any teacher/class name.
-2. Copy its join code or link; open it in an incognito window or separate browser profile.
-3. Join as a learner, complete a check-in and some practice, then return to the teacher workspace.
-4. Inspect the heatmap, hover a `Needs support`, `Developing`, or `Not started` cell for the available quick action, and open a group mini-lesson.
+2. Copy its join code or link; open it in an incognito window or separate browser profile. Join as a learner and complete the check-in. For a suggested group, have two learners miss the same skill.
+3. Return to the teacher workspace. The heatmap is based on those workspace learners and their stored evidence, not the fictional sample class.
+4. Hover a `Needs support` or `Developing` cell and choose **Assign 3Q**. Return to that learner, refresh, then open **Plan** to find the assignment under **From your teacher**.
+5. Open **Mini Lesson** from a suggested group (or a `Needs support` cell). The route displays the workspace group, an AI-assisted 15–20 minute lesson, validated AI-generated matched practice, and a vetted skill-aligned video.
+6. `Not started` offers a one-time reminder. `Mastered` is informational only.
 
 Example teacher/class: `Ms. Jordan`, `Period 3 fractions`.
 
@@ -28,7 +31,7 @@ The fixed fictional sample heatmap is also available at `/teacher/dashboard`.
 
 ## How we used Codex and GPT-5.6
 
-Codex accelerated the project from scaffold through polished demo: it helped establish the Next.js structure, implement API routes and student/teacher flows, refine UI interactions, resolve merges, add tests, and maintain the project documentation. The builders directed and reviewed the product decisions throughout. We kept a running log of the work in [CODEX_LOG.md](./CODEX_LOG.md) and [IMPLEMENTATION_LOG.md](./IMPLEMENTATION_LOG.md).
+Codex accelerated the project from scaffold through polished demo: it helped establish the Next.js structure, implement API routes and student/teacher flows, refine UI interactions, resolve merges, add tests, and maintain the project documentation. We directed and reviewed the product decisions throughout. We kept a running log of the work in [CODEX_LOG.md](./CODEX_LOG.md) and [IMPLEMENTATION_LOG.md](./IMPLEMENTATION_LOG.md).
 
 Our approach was to figure out what GPT-5.6 is actually good at and hand it that work, instead of just prompting it for whatever came next.
 
@@ -54,10 +57,10 @@ The running app follows the same idea: GPT-5.6 does the language and planning, d
 
 ## How the AI is used
 
-- **GPT-5.6:** diagnosis language, nudge/hint/guided-step tutoring, validated practice-plan parameters, and mini-lesson drafts.
+- **GPT-5.6:** diagnosis language, nudge/hint/guided-step tutoring, validated student and teacher matched-practice parameters, and mini-lesson drafts.
 - **Deterministic server code:** answer scoring, mastery updates, practice progression, group membership, and answer-format validation.
 - **Safety boundary:** model outputs are schema-validated and answer-leak checked before display. Generated practice is reconstructed and scored from server-derived math data.
-- **Caching:** validated teacher lessons and other eligible AI results are stored in `ai_runs`; reopening the same plan uses the cache rather than making another OpenAI call.
+- **Caching:** validated teacher lessons, matched practice, and other eligible AI results are stored in `ai_runs`; reopening the same plan uses the cache rather than making another OpenAI call.
 
 ## Local setup
 
@@ -93,7 +96,7 @@ Model overrides and cache configuration are documented in [`.env.example`](./.en
 
 ### Optional Supabase seed
 
-For durable learner/workspace data, set the three Supabase variables above, apply every migration in `supabase/migrations/` (`001`–`022`) in filename order, then run:
+For durable learner/workspace data, set the three Supabase variables above, apply every migration in `supabase/migrations/` (`001`–`024`) in filename order, then run:
 
 ```bash
 npm run seed
@@ -116,7 +119,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-The production build, TypeScript check, and focused demo/workspace tests pass in the current workspace.
+The production build, TypeScript check, and focused demo/workspace tests pass in the current workspace (230 tests across 36 files at the latest validation).
 
 ## Known limitations
 
