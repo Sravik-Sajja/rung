@@ -32,7 +32,7 @@ function SessionCard({ session }: { session: StudentWorkSession }) {
         <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-4 rounded-md">
           <div>
             <Eyebrow className="mb-1">{session.kind === "diagnostic" ? "Diagnostic" : "Focused practice"}</Eyebrow>
-            <p className="text-lg font-semibold text-ink">{sessionTitle(session)}</p>
+            <p className="capitalize text-lg font-semibold text-ink">{sessionTitle(session)}</p>
             <p className="text-sm text-ink-muted">{formatCompletedAt(session.completedAt)}</p>
           </div>
           <div className="flex items-center gap-3">

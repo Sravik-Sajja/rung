@@ -103,7 +103,7 @@ export function TeacherWorkspaceDashboard({
     students: workspace.students,
     subskills: workspace.subskills,
     cells: workspace.cells,
-    groups: groupStudentsByNeed(workspace.cells),
+    groups: groupStudentsByNeed(workspace.cells, workspace.subskills),
     // Without this the student detail pane reports "no submitted responses"
     // for a learner whose mastery came from those very responses.
     responseEvidenceByStudent,
@@ -170,6 +170,7 @@ export function TeacherWorkspaceDashboard({
           {removeError ? <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{removeError}</p> : null}
           <DashboardView
             dashboard={dashboard}
+            groupHrefFor={(groupId) => `/teacher-workspace/groups/${encodeURIComponent(groupId)}`}
             onPersistFollowUp={persistFollowUp}
             onRemoveStudent={removeStudent}
             removingStudentId={removingStudentId}

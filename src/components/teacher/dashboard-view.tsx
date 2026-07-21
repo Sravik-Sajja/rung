@@ -10,11 +10,14 @@ import type { TeacherDashboard } from "@/lib/types";
 
 export function DashboardView({
   dashboard,
+  groupHrefFor,
   onRemoveStudent,
   removingStudentId,
   onPersistFollowUp,
 }: {
   dashboard: TeacherDashboard;
+  /** Workspace dashboards use their own lesson route instead of sample-class routes. */
+  groupHrefFor?: (groupId: string) => string;
   /** Only a temporary workspace passes these; the sample class roster is fixed. */
   onRemoveStudent?: (id: string) => void;
   removingStudentId?: string | null;
@@ -167,6 +170,7 @@ export function DashboardView({
                   assignedFollowUpKeys={assignedFollowUps}
                   dashboard={dashboard}
                   groupIdForCell={groupForCell}
+                  groupHrefFor={groupHrefFor}
                   onAssignFollowUp={assignFollowUp}
                   onSendReminder={sendReminder}
                   onSelectStudent={setSelectedStudentId}
@@ -211,6 +215,7 @@ export function DashboardView({
                       followUpAssigned={group.studentIds.every((studentId) => assignedFollowUps.has(followUpKey(studentId, group.subskillId)))}
                       group={group}
                       key={group.id}
+                      lessonHref={groupHrefFor?.(group.id)}
                       onAssignFollowUp={async () => {
                         const outcomes = await Promise.all(
                           group.studentIds.map((studentId) => persistFollowUp(studentId, group.subskillId))

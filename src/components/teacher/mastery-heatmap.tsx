@@ -65,6 +65,7 @@ export function MasteryHeatmapTable({
   reminderKeys = new Set<string>(),
   onSendReminder,
   groupIdForCell,
+  groupHrefFor,
 }: {
   dashboard: TeacherDashboard;
   onSelectStudent?: (id: string) => void;
@@ -74,6 +75,7 @@ export function MasteryHeatmapTable({
   reminderKeys?: ReadonlySet<string>;
   onSendReminder?: (studentId: string, subskillId: string) => void;
   groupIdForCell?: (studentId: string, subskillId: string) => string | undefined;
+  groupHrefFor?: (groupId: string) => string;
 }) {
   const [dismissedReminderKeys, setDismissedReminderKeys] = useState<Set<string>>(() => new Set());
 
@@ -206,7 +208,7 @@ export function MasteryHeatmapTable({
                             {cell.level === "needs_support" && groupId ? (
                               <Link
                                 className="rounded border border-ink/30 bg-surface px-1.5 py-1 text-[11px] font-semibold text-ink shadow-sm hover:bg-surface-2"
-                                href={`/teacher/groups/${groupId}`}
+                                href={groupHrefFor?.(groupId) ?? `/teacher/groups/${groupId}`}
                                 title="Open the shared group lesson"
                               >
                                 Lesson

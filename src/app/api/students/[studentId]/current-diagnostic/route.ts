@@ -15,9 +15,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ stud
     const actor = await requireStudentActor(request, studentId);
     const current = actor.store === "local_demo"
       ? getDemoCurrentDiagnostic(studentId)
-      : await getPersistedCurrentDiagnostic({ studentId });
+      : await getPersistedCurrentDiagnostic({ studentId, assignmentId: actor.assignmentId });
     if (!current) return NextResponse.json({ error: "Diagnostic persistence is unavailable" }, { status: 503 });
-    return NextResponse.json({ studentId, diagnosticSessionId: current.diagnosticSessionId, practicePlans: current.practicePlans });
+    return NextResponse.json({
+      studentId,
+      diagnosticSessionId: current.diagnosticSessionId,
+      assignmentId: "assignmentId" in current ? current.assignmentId : actor.assignmentId ?? null,
+      practicePlans: current.practicePlans,
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load your current diagnostic" }, { status: 400 });
   }

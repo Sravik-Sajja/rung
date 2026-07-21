@@ -138,6 +138,7 @@ function DiagnosisContent() {
   // a student can reach this hub with teacher-assigned plans and NO diagnostic session at all.
   const [teacherPlans, setTeacherPlans] = useState<PlanSummary[] | null>(null);
   const hasDiagnostic = Boolean(diagnosticSessionId);
+  const [completionStatusLoaded, setCompletionStatusLoaded] = useState(false);
 
   useEffect(() => {
     if (!studentId) {
@@ -181,22 +182,31 @@ function DiagnosisContent() {
   }, [studentId, diagnosticSessionId, result]);
 
   useEffect(() => {
-    if (!studentId) return;
+    if (!studentId || (hasDiagnostic && !result) || teacherPlans === null) {
+      setCompletionStatusLoaded(false);
+      return;
+    }
     const combined = [...(result?.practicePlans ?? []), ...(teacherPlans ?? [])];
-    if (!combined.length) return;
+    if (!combined.length) {
+      setCompletionStatusLoaded(true);
+      return;
+    }
     let cancelled = false;
+    setCompletionStatusLoaded(false);
     Promise.all(combined.map(async (plan) => {
       const response = await fetch(`/api/practice/${plan.id}?studentId=${encodeURIComponent(studentId)}`);
       if (!response.ok) return null;
       const practice = await response.json() as { session?: { status?: string } };
       return practice.session?.status === "complete" ? plan.id : null;
     })).then((ids) => {
-      if (!cancelled) setCompletedPlanIds(new Set(ids.filter((id): id is string => Boolean(id))));
+      if (cancelled) return;
+      setCompletedPlanIds(new Set(ids.filter((id): id is string => Boolean(id))));
+      setCompletionStatusLoaded(true);
+    }).catch(() => {
+      if (!cancelled) setCompletionStatusLoaded(true);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [result, teacherPlans, studentId]);
+    return () => { cancelled = true; };
+  }, [hasDiagnostic, result, studentId, teacherPlans]);
 
   return (
     <StudentShell size="wide" studentId={studentId ?? undefined}>
@@ -260,12 +270,14 @@ function DiagnosisContent() {
                 <div className="grid gap-3">{practicePlans.map((plan, index) => {
                   const isComplete = completedPlanIds.has(plan.id) || plan.id === completedPlanId;
                   const returnTo = `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(diagnosticSessionId ?? "")}&studentId=${encodeURIComponent(studentId!)}&assignmentId=${encodeURIComponent(assignmentId)}&completedPlan=${encodeURIComponent(plan.id)}`;
-                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><div><p className="font-semibold capitalize text-ink">{plan.title}</p>{index === 0 && <p className="mt-1 text-sm font-medium text-focus">Recommended from your diagnostic</p>}</div>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId!)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
+                  return <Card key={plan.id} className="flex items-center justify-between gap-4 p-5"><div><p className="font-semibold capitalize text-ink">{plan.title}</p>{index === 0 && <p className="mt-1 text-sm font-medium text-focus">Recommended from your diagnostic</p>}</div>{isComplete ? <span className="text-sm font-semibold text-accent">Completed</span> : !completionStatusLoaded ? <button type="button" disabled className={buttonClasses("focus", "md")}>Checking progress…</button> : <Link href={`/student/practice/${plan.id}?studentId=${encodeURIComponent(studentId!)}&returnTo=${encodeURIComponent(returnTo)}`} className={buttonClasses("focus", "md")}>Start practice</Link>}</Card>;
                 })}</div>
               </div>;
             })()}
-            {hasDiagnostic && result && studentId && <DiagnosticReveal studentId={studentId} diagnosticSessionId={diagnosticSessionId} />}
           </div>
+          {/* Kept as its own grid row so the intro centers against the practice-plan cards,
+              rather than the much taller question-by-question review below them. */}
+          {result && studentId && <div className="lg:col-start-2"><DiagnosticReveal studentId={studentId} diagnosticSessionId={diagnosticSessionId} /></div>}
         </div>
       </section>
     </StudentShell>

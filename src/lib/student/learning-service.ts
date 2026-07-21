@@ -1031,28 +1031,30 @@ export async function recordPersistedPracticeResponse(input: { practiceSessionId
  * mirroring `getPersistedStudentMastery`; a student with no completed diagnostic yet gets a null
  * `diagnosticSessionId` and an empty plan list rather than an error.
  */
-export async function getPersistedCurrentDiagnostic(input: { studentId: string }): Promise<{ diagnosticSessionId: string | null; practicePlans: Array<PracticePlanSummary & { source: "diagnostic" | "teacher" }> } | null> {
+export async function getPersistedCurrentDiagnostic(input: { studentId: string; assignmentId?: string }): Promise<{ diagnosticSessionId: string | null; assignmentId: string | null; practicePlans: Array<PracticePlanSummary & { source: "diagnostic" | "teacher" }> } | null> {
   const client = configuredClient();
   if (!client) return null;
   // Teacher-assigned plans have no diagnostic session behind them, so they are
   // read independently and folded in below rather than being reachable only
   // through a diagnostic_session_id lookup.
   const teacherPlans = await persistedTeacherPlans(client, input.studentId);
-  const { data, error } = await client
+  let query = client
     .from("diagnostic_sessions")
-    .select("id")
+    .select("id, assignment_id")
     .eq("student_id", input.studentId)
     .eq("status", "complete")
     .order("completed_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (input.assignmentId) query = query.eq("assignment_id", input.assignmentId);
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  const diagnosticSessionId = (data as { id: string } | null)?.id ?? null;
-  if (!diagnosticSessionId) return { diagnosticSessionId: null, practicePlans: teacherPlans };
+  const session = data as { id: string; assignment_id: string } | null;
+  if (!session) return { diagnosticSessionId: null, assignmentId: input.assignmentId ?? null, practicePlans: teacherPlans };
+  const diagnosticSessionId = session.id;
   const completion = await readPersistedDiagnosticCompletion(client, { diagnosticSessionId });
-  if (!completion) return { diagnosticSessionId: null, practicePlans: teacherPlans };
+  if (!completion) return { diagnosticSessionId: null, assignmentId: session.assignment_id, practicePlans: teacherPlans };
   const diagnosticPlans = completion.practicePlans.map((plan) => ({ ...plan, source: "diagnostic" as const }));
-  return { diagnosticSessionId, practicePlans: [...diagnosticPlans, ...teacherPlans] };
+  return { diagnosticSessionId, assignmentId: session.assignment_id, practicePlans: [...diagnosticPlans, ...teacherPlans] };
 }
 
 export type AssignedTeacherPractice = { planId: string; subskillId: string; studentId: string; alreadyAssigned: boolean };

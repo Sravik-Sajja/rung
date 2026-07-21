@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FractionExpression } from "@/components/student/fraction";
 import { StudentShell } from "@/components/student/surface/student-shell";
-import { Card, Eyebrow, buttonClasses } from "@/components/ui";
+import { Card, Eyebrow, VideoEmbed, buttonClasses } from "@/components/ui";
+import type { VettedVideo } from "@/lib/types";
 
 type PracticeSummary = {
   session: { id: string; status: "active" | "complete" };
@@ -24,7 +25,14 @@ type PracticeSummary = {
     correct: boolean;
     correctOnFirstTry: boolean;
   }>;
+  video?: VettedVideo | null;
 };
+
+const VIDEO_GATE_SECONDS = 45;
+
+function formatCountdown(remainingSeconds: number) {
+  return `0:${String(Math.max(remainingSeconds, 0)).padStart(2, "0")}`;
+}
 
 function retryDescription(item: PracticeSummary["items"][number]) {
   if (item.correctOnFirstTry) return "Correct on the first try";
@@ -36,6 +44,8 @@ function retryDescription(item: PracticeSummary["items"][number]) {
 export function PracticeSummaryPage({ sessionId, studentId, returnTo }: { sessionId: string; studentId: string; returnTo?: string }) {
   const [summary, setSummary] = useState<PracticeSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [videoOpened, setVideoOpened] = useState(false);
+  const [watchSeconds, setWatchSeconds] = useState(0);
   const practiceHref = `/student/practice/${sessionId}?studentId=${encodeURIComponent(studentId)}${returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ""}`;
   const masteryHref = `/student/mastery?studentId=${encodeURIComponent(studentId)}`;
 
@@ -45,6 +55,14 @@ export function PracticeSummaryPage({ sessionId, studentId, returnTo }: { sessio
       .then(setSummary)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load practice summary."));
   }, [sessionId, studentId]);
+
+  useEffect(() => {
+    if (!videoOpened) return;
+    const interval = setInterval(() => {
+      setWatchSeconds((seconds) => Math.min(seconds + 1, VIDEO_GATE_SECONDS));
+    }, 1_000);
+    return () => clearInterval(interval);
+  }, [videoOpened]);
 
   if (!summary) {
     return (
@@ -71,6 +89,9 @@ export function PracticeSummaryPage({ sessionId, studentId, returnTo }: { sessio
   }
 
   const { totals } = summary;
+  const hasPlayableVideo = Boolean(summary.video?.embedUrl);
+  const refresherRequired = totals.incorrectAttemptCount > 0 && hasPlayableVideo;
+  const readyToContinue = !refresherRequired || (videoOpened && watchSeconds >= VIDEO_GATE_SECONDS);
   return (
     <StudentShell>
       <section className="mx-auto w-full max-w-3xl space-y-6 py-10">
@@ -99,9 +120,46 @@ export function PracticeSummaryPage({ sessionId, studentId, returnTo }: { sessio
           </ul>
         </Card>
 
+        {summary.video && refresherRequired && (
+          <Card className="space-y-3 border-focus bg-surface-2 p-6 sm:p-8">
+            <Eyebrow>Quick refresher</Eyebrow>
+            <h2 className="text-lg font-semibold text-ink">Revisit the key idea before moving on.</h2>
+            <p className="text-sm text-ink-muted">Watch the refresher to unlock your next step.</p>
+            {videoOpened ? (
+              <>
+                <VideoEmbed video={summary.video} />
+                <p className="text-sm font-medium text-focus">
+                  {watchSeconds >= VIDEO_GATE_SECONDS
+                    ? "Refresher complete. You can continue."
+                    : `Keep watching — ${formatCountdown(VIDEO_GATE_SECONDS - watchSeconds)} remaining.`}
+                </p>
+              </>
+            ) : (
+              <button type="button" onClick={() => setVideoOpened(true)} className={buttonClasses("secondary", "md")}>
+                Play refresher video
+              </button>
+            )}
+          </Card>
+        )}
+
+        {summary.video?.embedUrl && !refresherRequired && (
+          <details className="rounded-xl border border-border bg-surface-2 p-5">
+            <summary className="cursor-pointer text-sm font-medium text-focus">Want a refresher anyway?</summary>
+            <div className="mt-4"><VideoEmbed video={summary.video} /></div>
+          </details>
+        )}
+
         <div className="flex flex-wrap justify-center gap-3">
-          {returnTo && <Link href={returnTo} className={buttonClasses("focus", "md")}>Back to practice plans</Link>}
-          <Link href={masteryHref} className={buttonClasses(returnTo ? "secondary" : "focus", "md")}>See my progress</Link>
+          {readyToContinue ? (
+            <>
+              {returnTo && <Link href={returnTo} className={buttonClasses("focus", "md")}>Back to practice plans</Link>}
+              <Link href={masteryHref} className={buttonClasses(returnTo ? "secondary" : "focus", "md")}>See my progress</Link>
+            </>
+          ) : (
+            <button type="button" disabled className={buttonClasses("focus", "md")}>
+              {`Watch the refresher — ${formatCountdown(VIDEO_GATE_SECONDS - watchSeconds)} remaining`}
+            </button>
+          )}
         </div>
       </section>
     </StudentShell>

@@ -8,11 +8,13 @@ import type { Subskill, TeacherGroup } from "@/lib/types";
 
 export function GroupCard({
   group,
+  lessonHref,
   subskill,
   followUpAssigned,
   onAssignFollowUp,
 }: {
   group: TeacherGroup;
+  lessonHref?: string;
   subskill: Subskill | undefined;
   followUpAssigned?: boolean;
   onAssignFollowUp?: () => void;
@@ -27,7 +29,7 @@ export function GroupCard({
         Shared gap: <span className="font-medium text-ink">{subskill?.name ?? group.subskillId}</span>
       </p>
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
-        <Link className={buttonClasses("focus", "sm")} href={`/teacher/groups/${group.id}`}>
+        <Link className={buttonClasses("focus", "sm")} href={lessonHref ?? `/teacher/groups/${group.id}`}>
           Mini Lesson
         </Link>
         {onAssignFollowUp ? (

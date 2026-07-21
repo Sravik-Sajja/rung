@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStudentActor } from "@/lib/auth/actor";
 import { getDemoPracticeSummary } from "@/lib/student/demo-learning-store";
 import { getPersistedPracticeSummary } from "@/lib/student/learning-service";
+import { getVideoForSubskill } from "@/lib/student/videos";
 
 /** Provides the response-history recap shown once a learner finishes a practice plan. */
 export async function GET(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
@@ -15,7 +16,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
       ? getDemoPracticeSummary(sessionId, studentId)
       : await getPersistedPracticeSummary({ practiceSessionId: sessionId, studentId });
     if (!summary) return NextResponse.json({ error: "Practice session was not found" }, { status: 404 });
-    return NextResponse.json(summary);
+    const subskillId = summary.items[0]?.subskillId;
+    const video = subskillId ? await getVideoForSubskill({ subskillId, store: actor.store }) : null;
+    return NextResponse.json({ ...summary, video });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load practice summary" }, { status: 400 });
   }

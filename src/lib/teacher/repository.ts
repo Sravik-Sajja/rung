@@ -202,7 +202,7 @@ function getLocalTeacherDashboardWithParticipants() {
     ...base,
     students: [...base.students, ...participantStudents],
     cells,
-    groups: groupStudentsByNeed(cells),
+    groups: groupStudentsByNeed(cells, base.subskills),
     responseEvidenceByStudent: Object.fromEntries([...base.students, ...participantStudents].map((student) => [
       student.id,
       teacherEvidenceBySubskill(getDemoStudentResponseEvidence(student.id)),
@@ -233,7 +233,7 @@ export async function getTeacherDashboard(classId: string = canonicalDemoIds.cla
     students: dashboardStudents,
     subskills: subskills.map((subskill) => ({ id: subskill.id, name: subskill.name })),
     cells,
-    groups: groupStudentsByNeed(cells),
+    groups: groupStudentsByNeed(cells, subskills.map((subskill) => ({ id: subskill.id, name: subskill.name }))),
     // Scope the evidence query to the students already returned by this class
     // dashboard. It cannot introduce an answer from an unrelated student.
     responseEvidenceByStudent: await getTeacherEvidenceByStudentIds(dashboardStudents.map((student) => student.id), classId),

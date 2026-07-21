@@ -26,15 +26,15 @@ export function StudentNav({ studentId }: { studentId: string }) {
   const pathname = usePathname();
   // `undefined` = still loading (safe default: link stays disabled), `null` = confirmed this
   // student has neither a completed diagnostic nor any assigned plans.
-  const [planState, setPlanState] = useState<{ diagnosticSessionId: string | null; hasPlans: boolean } | null | undefined>(undefined);
+  const [planState, setPlanState] = useState<{ diagnosticSessionId: string | null; assignmentId: string | null; hasPlans: boolean } | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/students/${encodeURIComponent(studentId)}/current-diagnostic`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Could not load current diagnostic"))))
-      .then((data: { diagnosticSessionId: string | null; practicePlans?: unknown[] }) => {
+      .then((data: { diagnosticSessionId: string | null; assignmentId?: string | null; practicePlans?: unknown[] }) => {
         if (cancelled) return;
-        setPlanState({ diagnosticSessionId: data.diagnosticSessionId, hasPlans: Boolean(data.practicePlans?.length) });
+        setPlanState({ diagnosticSessionId: data.diagnosticSessionId, assignmentId: data.assignmentId ?? null, hasPlans: Boolean(data.practicePlans?.length) });
       })
       .catch(() => {
         if (!cancelled) setPlanState(null);
@@ -47,8 +47,8 @@ export function StudentNav({ studentId }: { studentId: string }) {
   const studentQuery = `studentId=${encodeURIComponent(studentId)}`;
   const planHref = planState && (planState.diagnosticSessionId || planState.hasPlans)
     ? planState.diagnosticSessionId
-      ? `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(planState.diagnosticSessionId)}&${studentQuery}`
-      : `/student/diagnosis?${studentQuery}`
+      ? `/student/diagnosis?diagnosticSessionId=${encodeURIComponent(planState.diagnosticSessionId)}&${studentQuery}${planState.assignmentId ? `&assignmentId=${encodeURIComponent(planState.assignmentId)}` : ""}`
+      : `/student/diagnosis?${studentQuery}${planState.assignmentId ? `&assignmentId=${encodeURIComponent(planState.assignmentId)}` : ""}`
     : null;
 
   const links: NavLink[] = [

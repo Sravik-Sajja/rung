@@ -669,3 +669,19 @@ The per-learner question bank in `src/lib/items/diagnostic-items.ts` already exi
 
 - `npx tsc --noEmit` passed.
 - Focused demo learning-store tests: 6 passed.
+
+## 2026-07-20 — workspace mini-lesson continuity
+
+### Completed
+
+- Fixed teacher-workspace group links so heatmap and group-card lesson actions stay in the temporary workspace instead of opening the sample-class dashboard.
+- Corrected workspace grouping to project from the workspace's own subskill list, students, and stored mastery evidence.
+- Added the same route-level mini-lesson loading state used by sample groups, so navigation immediately shows that the lesson is being prepared.
+- Reused vetted videos for the corresponding workspace skill; number-line practice now renders its actual labeled number line in both sample and workspace lessons.
+- Teacher mini-lessons now use the same constrained AI practice generator as student plans. GPT proposes only bounded item parameters; server validation rejects invalid, duplicate, or wrong-skill items before deterministic code constructs prompts, visuals, and answer specifications. A deterministic fallback remains available.
+- Merged durable teacher follow-ups: a workspace teacher's Assign 3Q action creates an idempotent, student-owned practice plan, and the student plan hub includes these teacher-assigned plans even when there is no completed diagnostic.
+- Preserved assignment-scoped student plan navigation so returning from Progress opens the diagnostic/practice hub for the correct joined-class assignment.
+
+### Validation
+
+- `npx tsc --noEmit`, `git diff --check`, and `npm test` passed (36 files / 230 tests).

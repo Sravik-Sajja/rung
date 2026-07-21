@@ -32,14 +32,17 @@ export function StudentShell({
    */
   studentId?: string;
 }) {
-  const container = cn("mx-auto w-full px-5", widthClass[size]);
+  // Navigation is an app-level anchor, so it keeps one stable wide alignment
+  // even when an individual page intentionally uses a narrow reading column.
+  const headerContainer = cn("mx-auto w-full px-5", widthClass.wide);
+  const contentContainer = cn("mx-auto w-full px-5", widthClass[size]);
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-ink">
       {/* Header sits one step up the elevation ladder (bg-surface + shadow-sm) so the neutral
           bg-bg canvas reads as a distinct plane underneath it, not one flat wash. */}
       <header className="border-b border-border bg-surface shadow-sm">
-        <div className={cn(container, "flex flex-wrap items-center justify-between gap-3 py-3")}>
+        <div className={cn(headerContainer, "flex flex-wrap items-center justify-between gap-3 py-3")}>
           <div className="flex items-center gap-6">
             <Link href="/" className="shrink-0" aria-label="Rung home">
               <RungWordmark size="sm" />
@@ -56,7 +59,7 @@ export function StudentShell({
         </div>
       </header>
 
-      <main className={cn(container, "flex flex-1 flex-col py-8")}>{children}</main>
+      <main className={cn(contentContainer, "flex flex-1 flex-col py-8")}>{children}</main>
     </div>
   );
 }

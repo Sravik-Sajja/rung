@@ -6,8 +6,8 @@ import { LessonPlanCard } from "@/components/teacher/lesson-plan";
 import { PracticeSetCard } from "@/components/teacher/practice-set";
 import { VideoRecommendationCard } from "@/components/teacher/video-recommendation";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { demoItems } from "@/lib/demo-data";
 import { getDemoTeacherGroupPlan } from "@/lib/teacher/grouping";
+import { generateTeacherMatchedPractice } from "@/lib/teacher/matched-practice";
 import { getTeacherDashboard } from "@/lib/teacher/repository";
 import { runtimeAiAdapter } from "@/lib/ai/adapter";
 import { teacherLessonDurationMinutes } from "@/lib/ai/contracts";
@@ -29,10 +29,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
 
   const students = dashboard.students.filter((student) => group.studentIds.includes(student.id));
   const subskill = dashboard.subskills.find(({ id }) => id === group.subskillId);
-  const practiceItems = seededPlan.practiceItemIds.flatMap((itemId) => {
-    const item = demoItems.find(({ id }) => id === itemId);
-    return item ? [item] : [];
-  });
+  const practiceItems = await generateTeacherMatchedPractice({ scopeId: group.id, subskillId: group.subskillId });
   const draft = await runtimeAiAdapter.generateTeacherLessonDraft({
     groupLabel: group.label,
     subskillName: subskill?.name ?? group.subskillId,

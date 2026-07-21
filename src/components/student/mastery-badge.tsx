@@ -14,5 +14,5 @@ const copy: Record<MasteryLevel, { label: string; tone: "none" | "support" | "de
 
 export function MasteryBadge({ level }: { level: MasteryLevel }) {
   const status = copy[level];
-  return <Badge tone={status.tone}>{status.label}</Badge>;
+  return <Badge tone={status.tone} className="whitespace-nowrap">{status.label}</Badge>;
 }
