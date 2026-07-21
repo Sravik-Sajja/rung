@@ -143,8 +143,13 @@ export function MasteryHeatmapTable({
                   const followUpAssigned = assignedFollowUpKeys.has(followUpKey);
                   const reminderSent = reminderKeys.has(followUpKey);
                   const groupId = groupIdForCell?.(student.id, subskill.id);
-                  const hasQuickAction = cell.level !== "mastered"
-                    && !(cell.level === "not_started" && dismissedReminderKeys.has(followUpKey));
+                  // Assign is offered on every cell, so any dashboard that can assign always has
+                  // an action overlay — including on "mastered" (re-check) and "not started"
+                  // (get moving) cells. The fixed sample class passes no assign handler, so it
+                  // keeps the original evidence-gated reminder/lesson behavior.
+                  const hasQuickAction = Boolean(onAssignFollowUp)
+                    || (cell.level !== "mastered"
+                      && !(cell.level === "not_started" && dismissedReminderKeys.has(followUpKey)));
                   return (
                     <td
                       className={cn(
@@ -195,7 +200,11 @@ export function MasteryHeatmapTable({
                                 </button>
                               )
                             ) : null}
-                            {(cell.level === "needs_support" || cell.level === "developing") && onAssignFollowUp ? (
+                            {/* Assigning is never gated on mastery level: a teacher may want to
+                                push a follow-up at a skill a student has not started yet, or
+                                re-check one they already mastered. The heatmap reports evidence;
+                                it does not get to decide what a teacher is allowed to assign. */}
+                            {onAssignFollowUp ? (
                               <button
                                 className="rounded border border-ink/30 bg-surface px-1.5 py-1 text-[11px] font-semibold text-ink shadow-sm hover:bg-surface-2"
                                 onClick={() => onAssignFollowUp(student.id, subskill.id)}

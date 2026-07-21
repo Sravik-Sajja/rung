@@ -180,11 +180,26 @@ describe("teacher-assigned practice (WS1a)", () => {
     ]);
   });
 
-  it("throws rather than assigning an incomplete set when a skill does not have three bank items", () => {
-    expect(() => assignDemoTeacherPractice({
+  // A thin bank is a content gap, not a reason to refuse the teacher's action: assign what
+  // exists rather than failing the whole request (this skill seeds only two bank items).
+  it("assigns the available questions when a skill has fewer than three bank items", () => {
+    const assigned = assignDemoTeacherPractice({
       studentId: "demo-teacher-assign-sparse",
       classId: canonicalDemoIds.classId,
       subskillId: canonicalDemoIds.commonDenominatorSubskillId,
+      teacherName: "Ms. Rivera",
+    });
+    expect(assigned.alreadyAssigned).toBe(false);
+    const practice = getDemoPractice(assigned.planId, "demo-teacher-assign-sparse");
+    expect(practice?.items.length).toBeGreaterThan(0);
+    expect(practice?.items.length).toBeLessThanOrEqual(3);
+  });
+
+  it("refuses only when a skill has no bank items at all", () => {
+    expect(() => assignDemoTeacherPractice({
+      studentId: "demo-teacher-assign-empty",
+      classId: canonicalDemoIds.classId,
+      subskillId: "subskill-with-no-items",
       teacherName: "Ms. Rivera",
     })).toThrow();
   });

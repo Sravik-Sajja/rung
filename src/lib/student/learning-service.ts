@@ -1137,7 +1137,11 @@ export async function assignTeacherPractice(input: { studentId: string; classId:
     subskillDisplayName(client, input.subskillId),
   ]);
   if (!topicId) throw new Error("This class has no assignment to attach practice to.");
-  if (itemIds.length < 3) throw new Error("This skill does not have enough bank items to assign practice.");
+  // Assign up to three questions, but never refuse the whole assignment just because a skill's
+  // bank is short — a teacher pressing "Assign 3Q" wants the student to get *something*, and a
+  // thin bank is a content gap, not a reason to fail the action. Only a genuinely empty bank
+  // (nothing to ask) is an error.
+  if (itemIds.length === 0) throw new Error("This skill has no practice questions to assign yet.");
 
   const planId = defaultGeneratedId("teacher-practice");
   const { error: sessionError } = await client.from("practice_sessions").insert({

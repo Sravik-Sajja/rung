@@ -663,7 +663,9 @@ export function assignDemoTeacherPractice(input: { studentId: string; classId: s
     .filter((item) => item.subskillId === input.subskillId)
     .sort((left, right) => left.id.localeCompare(right.id))
     .slice(0, 3);
-  if (bankItems.length < 3) throw new Error("This skill does not have enough bank items to assign practice.");
+  // Mirrors the persisted path: assign up to three, and only refuse when the bank is empty. A
+  // short bank is a content gap, not a reason to fail the teacher's action.
+  if (bankItems.length === 0) throw new Error("This skill has no practice questions to assign yet.");
 
   const subskillName = demoSubskills.find((skill) => skill.id === input.subskillId)?.name ?? input.subskillId;
   const plan: PracticePlan = { subskillId: input.subskillId, title: subskillName, reason: `Assigned by your teacher to strengthen ${subskillName}.` };
